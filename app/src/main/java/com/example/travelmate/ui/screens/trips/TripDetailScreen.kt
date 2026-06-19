@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -12,6 +13,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Delete
@@ -22,6 +24,8 @@ import androidx.compose.material.icons.filled.Notes
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.WaterDrop
+import androidx.compose.material.icons.filled.Air
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,16 +34,20 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.travelmate.data.model.Place
+import com.example.travelmate.data.model.WeatherInfo
 import com.example.travelmate.data.model.TripPlaceWithDetail
 import com.example.travelmate.ui.theme.SkyBlue40
 import com.example.travelmate.viewmodel.AuthViewModel
 import com.example.travelmate.viewmodel.PlaceViewModel
 import com.example.travelmate.viewmodel.TripViewModel
+import com.example.travelmate.viewmodel.WeatherViewModel
+import com.example.travelmate.viewmodel.WeatherState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,6 +56,7 @@ fun TripDetailScreen(
     tripViewModel: TripViewModel,
     placeViewModel: PlaceViewModel,
     authViewModel: AuthViewModel,
+    weatherViewModel: WeatherViewModel,
     onBack: () -> Unit,
     onPlaceClick: (String) -> Unit,
     onInviteMembers: () -> Unit = {},
@@ -60,12 +69,14 @@ fun TripDetailScreen(
     val allPlaces by placeViewModel.places.collectAsState()
     val isPlacesLoading by tripViewModel.isPlacesLoading.collectAsState()
     val successMessage by tripViewModel.successMessage.collectAsState()
+    val weatherState by weatherViewModel.weatherState.collectAsState()
 
     // Dialog states
     var showEditTripDialog by remember { mutableStateOf(false) }
     var showAddPlaceSheet by remember { mutableStateOf(false) }
     var showEditPlaceDialog by remember { mutableStateOf<TripPlaceWithDetail?>(null) }
     var showDeleteConfirm by remember { mutableStateOf<TripPlaceWithDetail?>(null) }
+    var showAutoScheduleConfirm by remember { mutableStateOf(false) }
 
     // Edit trip fields
     var editTripName by remember { mutableStateOf("") }
@@ -101,6 +112,16 @@ fun TripDetailScreen(
             snackbarHostState.showSnackbar(it)
             tripViewModel.clearMessages()
         }
+    }
+
+    // Khi trip load xong → lấy thành phố từ địa điểm đầu tiên → gọi API thời tiết
+    LaunchedEffect(selectedTrip, tripPlacesWithDetail) {
+        val t = selectedTrip ?: return@LaunchedEffect
+        if (t.startDate.isBlank() || t.endDate.isBlank()) return@LaunchedEffect
+        // Lấy thành phố từ địa điểm đầu tiên trong trip
+        val city = tripPlacesWithDetail.firstOrNull()?.place?.city
+            ?: return@LaunchedEffect
+        weatherViewModel.loadWeather(city, t.startDate, t.endDate)
     }
 
     val trip = selectedTrip
@@ -256,8 +277,40 @@ fun TripDetailScreen(
                                     }
                                 }
                             }
+
+                            // ── Nút Auto-schedule ─────────────────────────────
+                            val unscheduledCount = tripPlacesWithDetail
+                                .count { it.tripPlace.visitDate.isBlank() }
+                            if (unscheduledCount > 0) {
+                                Spacer(Modifier.height(8.dp))
+                                Button(
+                                    onClick = { showAutoScheduleConfirm = true },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF5C6BC0),
+                                        contentColor = Color.White
+                                    )
+                                ) {
+                                    Icon(Icons.Filled.AutoAwesome, null,
+                                        modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        "Tự động xếp lịch ($unscheduledCount địa điểm)",
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
                         }
                     }
+                }
+
+                // ── Weather Card ─────────────────────────────────────────────
+                item {
+                    WeatherCard(
+                        weatherState = weatherState,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
                 }
 
                 // ── Nội dung ─────────────────────────────────────────────────
@@ -346,6 +399,70 @@ fun TripDetailScreen(
         )
     }
 
+    // ── Dialog xác nhận auto-schedule ───────────────────────────────────────
+    if (showAutoScheduleConfirm) {
+        val unscheduledCount = tripPlacesWithDetail.count { it.tripPlace.visitDate.isBlank() }
+        AlertDialog(
+            onDismissRequest = { showAutoScheduleConfirm = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("✨", fontSize = 20.sp)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Tự động xếp lịch")
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "App sẽ tự động phân bổ $unscheduledCount địa điểm chưa có lịch " +
+                        "vào các ngày trong chuyến đi.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFF5C6BC0).copy(alpha = 0.1f)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("📅 Phân bổ đều theo số ngày",
+                                style = MaterialTheme.typography.bodySmall)
+                            Text("⏰ Tự động gán giờ gợi ý (8h, 10h, 13h...)",
+                                style = MaterialTheme.typography.bodySmall)
+                            Text("✏️ Bạn có thể chỉnh sửa lại sau",
+                                style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    if (trip?.startDate.isNullOrBlank() || trip?.endDate.isNullOrBlank()) {
+                        Text(
+                            "⚠️ Chuyến đi chưa có ngày bắt đầu/kết thúc. Hãy chỉnh sửa trip trước.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        trip?.let { t ->
+                            tripViewModel.autoSchedule(tripId, t.startDate, t.endDate)
+                        }
+                        showAutoScheduleConfirm = false
+                    },
+                    enabled = !trip?.startDate.isNullOrBlank() && !trip?.endDate.isNullOrBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5C6BC0))
+                ) {
+                    Icon(Icons.Filled.AutoAwesome, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Xếp lịch ngay")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAutoScheduleConfirm = false }) { Text("Hủy") }
+            }
+        )
+    }
+
     // ── Dialog chỉnh sửa chuyến đi ───────────────────────────────────────────
     if (showEditTripDialog) {
         AlertDialog(
@@ -387,6 +504,187 @@ fun TripDetailScreen(
                 TextButton(onClick = { showEditTripDialog = false }) { Text("Hủy") }
             }
         )
+    }
+}
+
+// ── Weather Card ─────────────────────────────────────────────────────────────
+@Composable
+fun WeatherCard(
+    weatherState: WeatherState,
+    modifier: Modifier = Modifier
+) {
+    when (weatherState) {
+        is WeatherState.Loading -> {
+            Card(
+                modifier = modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color(0xFF1976D2).copy(alpha = 0.08f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = SkyBlue40
+                    )
+                    Text(
+                        "Đang tải thời tiết...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+
+        is WeatherState.Success -> {
+            val weatherMap = weatherState.weatherMap
+            if (weatherMap.isEmpty()) return
+
+            Card(
+                modifier = modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color(0xFF1565C0).copy(alpha = 0.08f)
+                ),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp, Color(0xFF1976D2).copy(alpha = 0.2f)
+                )
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    // Tiêu đề
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text("🌤️", fontSize = 16.sp)
+                        Text(
+                            "Dự báo thời tiết",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1565C0)
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            "OpenWeather",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    // Danh sách ngày — scroll ngang nếu nhiều ngày
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(weatherMap.entries.toList()) { (_, weather) ->
+                            WeatherDayItem(weather = weather)
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+
+        is WeatherState.Error -> {
+            // Hiển thị lỗi nhỏ, không che nội dung chính
+            Card(
+                modifier = modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("⚠️", fontSize = 14.sp)
+                    Text(
+                        "Không tải được thời tiết",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+
+        else -> Unit // Idle — không hiện gì
+    }
+}
+
+@Composable
+private fun WeatherDayItem(weather: WeatherInfo) {
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFF1976D2).copy(alpha = 0.1f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .width(80.dp)
+                .padding(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            // Ngày (chỉ dd/MM)
+            Text(
+                text = weather.date.take(5), // "20/07"
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1565C0)
+            )
+
+            // Emoji thời tiết
+            Text(weather.emoji, fontSize = 26.sp)
+
+            // Nhiệt độ max / min
+            Text(
+                text = "${weather.tempMax}°",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.ExtraBold,
+                color = Color(0xFFE65100)
+            )
+            Text(
+                text = "${weather.tempMin}°",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFF1976D2)
+            )
+
+            // Mô tả ngắn
+            Text(
+                text = weather.description,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                lineHeight = 14.sp
+            )
+
+            // Độ ẩm
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Text("💧", fontSize = 10.sp)
+                Text(
+                    "${weather.humidity}%",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }
 

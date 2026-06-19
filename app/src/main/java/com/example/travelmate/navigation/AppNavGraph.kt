@@ -42,6 +42,7 @@ import com.example.travelmate.viewmodel.TravelPostViewModel
 import com.example.travelmate.viewmodel.TripChatViewModel
 import com.example.travelmate.viewmodel.TripInviteViewModel
 import com.example.travelmate.viewmodel.TripViewModel
+import com.example.travelmate.viewmodel.WeatherViewModel
 
 @Composable
 fun AppNavGraph(
@@ -57,6 +58,7 @@ fun AppNavGraph(
     val postViewModel: TravelPostViewModel = viewModel()
     val reviewViewModel: ReviewViewModel = viewModel()
     val adminViewModel: AdminViewModel = viewModel()
+    val weatherViewModel: WeatherViewModel = viewModel()
 
     val currentUser by authViewModel.currentUser.collectAsState()
     val isLoggedIn = authViewModel.isLoggedIn()
@@ -192,6 +194,7 @@ fun AppNavGraph(
                 tripViewModel = tripViewModel,
                 placeViewModel = placeViewModel,
                 authViewModel = authViewModel,
+                weatherViewModel = weatherViewModel,
                 onBack = { navController.popBackStack() },
                 onPlaceClick = { placeId ->
                     navController.navigate(NavRoutes.placeDetail(placeId))

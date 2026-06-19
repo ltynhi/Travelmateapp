@@ -189,4 +189,104 @@ class TripViewModel : ViewModel() {
     }
 
     fun getTripCount(): Int = _trips.value.size
+
+    /**
+     * Tự động sắp xếp lịch trình cho trip.
+     *
+     * Thuật toán:
+     * 1. Lấy tất cả địa điểm chưa có ngày (visitDate trống)
+     * 2. Tính số ngày của trip từ startDate → endDate
+     * 3. Phân bổ đều địa điểm vào từng ngày (tối đa [maxPerDay] địa điểm/ngày)
+     * 4. Gán giờ tham quan gợi ý theo slot trong ngày
+     * 5. Lưu tất cả lên Firestore bằng batch update
+     */
+    fun autoSchedule(tripId: String, startDate: String, endDate: String) {
+        viewModelScope.launch {
+            _isLoading.value = true
+
+            // Chỉ lấy địa điểm chưa được xếp ngày
+            val unscheduled = _tripPlacesWithDetail.value
+                .filter { it.tripPlace.visitDate.isBlank() }
+
+            if (unscheduled.isEmpty()) {
+                _successMessage.value = "Tất cả địa điểm đã có lịch rồi!"
+                _isLoading.value = false
+                return@launch
+            }
+
+            // Sinh danh sách ngày từ startDate đến endDate
+            val dates = generateDateRange(startDate, endDate)
+            if (dates.isEmpty()) {
+                _error.value = "Ngày bắt đầu / kết thúc không hợp lệ"
+                _isLoading.value = false
+                return@launch
+            }
+
+            // Số địa điểm tối đa mỗi ngày (chia đều, tối thiểu 1)
+            val maxPerDay = maxOf(1, kotlin.math.ceil(
+                unscheduled.size.toDouble() / dates.size
+            ).toInt())
+
+            // Giờ tham quan gợi ý theo thứ tự trong ngày
+            val suggestedTimes = listOf(
+                "08:00", "10:00", "13:00", "15:00", "17:00", "19:00"
+            )
+
+            // Phân bổ địa điểm vào ngày
+            var placeIndex = 0
+            val updatedPlaces = mutableListOf<com.example.travelmate.data.model.TripPlace>()
+
+            for (date in dates) {
+                if (placeIndex >= unscheduled.size) break
+                var slotIndex = 0
+                while (slotIndex < maxPerDay && placeIndex < unscheduled.size) {
+                    val tp = unscheduled[placeIndex].tripPlace
+                    val suggestedTime = suggestedTimes.getOrElse(slotIndex) { "" }
+                    updatedPlaces.add(
+                        tp.copy(
+                            visitDate = date,
+                            visitTime = suggestedTime
+                        )
+                    )
+                    placeIndex++
+                    slotIndex++
+                }
+            }
+
+            // Lưu tất cả lên Firestore
+            var hasError = false
+            for (tp in updatedPlaces) {
+                repository.updateTripPlace(tp).onFailure { hasError = true }
+            }
+
+            if (hasError) {
+                _error.value = "Có lỗi khi lưu lịch trình, thử lại nhé"
+            } else {
+                _successMessage.value = "✅ Đã tự động xếp lịch ${updatedPlaces.size} địa điểm!"
+                loadTripPlacesWithDetail(tripId)
+            }
+            _isLoading.value = false
+        }
+    }
+
+    /**
+     * Sinh danh sách ngày từ startDate đến endDate (format dd/MM/yyyy).
+     */
+    private fun generateDateRange(startDate: String, endDate: String): List<String> {
+        return try {
+            val fmt = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.getDefault())
+            val start = fmt.parse(startDate) ?: return emptyList()
+            val end = fmt.parse(endDate) ?: return emptyList()
+            val dates = mutableListOf<String>()
+            val cal = java.util.Calendar.getInstance().apply { time = start }
+            val endCal = java.util.Calendar.getInstance().apply { time = end }
+            while (!cal.after(endCal)) {
+                dates.add(fmt.format(cal.time))
+                cal.add(java.util.Calendar.DAY_OF_MONTH, 1)
+            }
+            dates
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
 }
