@@ -131,10 +131,11 @@ class TripViewModel : ViewModel() {
         userId: String,
         visitDate: String = "",
         visitTime: String = "",
-        note: String = ""
+        note: String = "",
+        estimatedCost: Long = 0L
     ) {
         viewModelScope.launch {
-            repository.addPlaceToTrip(tripId, placeId, visitDate, visitTime, note).fold(
+            repository.addPlaceToTrip(tripId, placeId, visitDate, visitTime, note, estimatedCost).fold(
                 onSuccess = {
                     _successMessage.value = "Đã thêm địa điểm!"
                     loadTripPlacesWithDetail(tripId)
@@ -369,13 +370,34 @@ class TripViewModel : ViewModel() {
         return fallback.getOrElse(slotIndex) { "08:00" }
     }
 
-    /** Ước tính chi phí (min, max) theo category — đơn vị nghìn đồng */
+    /** Ước tính chi phí theo category + rating — dùng để gợi ý khi thêm địa điểm */
+    fun estimateCostForPlace(place: com.example.travelmate.data.model.Place): Long {
+        val base = when (place.category) {
+            "Núi"       -> 400_000L
+            "Di tích"   -> 80_000L
+            "Biển"      -> 20_000L
+            "Công viên" -> 30_000L
+            "Check-in"  -> 0L
+            "Quán ăn"   -> 100_000L
+            "Cafe"      -> 60_000L
+            else        -> 80_000L
+        }
+        val multiplier = when {
+            place.rating >= 4.7 -> 1.5
+            place.rating >= 4.4 -> 1.2
+            place.rating >= 4.0 -> 1.0
+            else                -> 0.8
+        }
+        return (base * multiplier).toLong()
+    }
+
+    /** Ước tính chi phí (min, max) theo category — dùng cho auto-schedule summary */
     private fun estimateCost(category: String): Pair<Long, Long> = when (category) {
-        "Biển"      -> Pair(0L,      50_000L)
+        "Biển"      -> Pair(0L,       50_000L)
         "Núi"       -> Pair(200_000L, 900_000L)
         "Di tích"   -> Pair(20_000L,  150_000L)
-        "Công viên" -> Pair(0L,       80_000L)
-        "Check-in"  -> Pair(0L,       50_000L)
+        "Công viên" -> Pair(0L,        80_000L)
+        "Check-in"  -> Pair(0L,        50_000L)
         "Quán ăn"   -> Pair(50_000L,  200_000L)
         "Cafe"      -> Pair(30_000L,  100_000L)
         else        -> Pair(50_000L,  200_000L)

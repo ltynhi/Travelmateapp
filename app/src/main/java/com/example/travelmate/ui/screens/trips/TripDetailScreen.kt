@@ -243,6 +243,31 @@ fun TripDetailScreen(
                                     color = MaterialTheme.colorScheme.onPrimaryContainer)
                             }
 
+                            // ── Tổng chi phí trip ────────────────────────────
+                            val totalCost = tripPlacesWithDetail
+                                .sumOf { it.tripPlace.estimatedCost }
+                            if (totalCost > 0) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Color(0xFF2E7D32).copy(alpha = 0.12f)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("💰", fontSize = 14.sp)
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(
+                                            "Tổng chi phí ước tính: ${formatCostFull(totalCost)}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFF2E7D32)
+                                        )
+                                    }
+                                }
+                            }
+
                             Spacer(modifier = Modifier.height(14.dp))
 
                             // ── Nút mời bạn bè + Chat ────────────────────────
@@ -382,7 +407,8 @@ fun TripDetailScreen(
             existingPlaceIds = tripPlacesWithDetail.map { it.place.placeId }.toSet(),
             tripStartDate = trip?.startDate ?: "",
             tripEndDate = trip?.endDate ?: "",
-            onAdd = { placeId, visitDate, visitTime, note ->
+            estimateCostFn = { place -> tripViewModel.estimateCostForPlace(place) },
+            onAdd = { placeId, visitDate, visitTime, note, estimatedCost ->
                 currentUser?.let { user ->
                     tripViewModel.addPlaceToTrip(
                         tripId = tripId,
@@ -390,7 +416,8 @@ fun TripDetailScreen(
                         userId = user.userId,
                         visitDate = visitDate,
                         visitTime = visitTime,
-                        note = note
+                        note = note,
+                        estimatedCost = estimatedCost
                     )
                 }
                 showAddPlaceSheet = false
@@ -991,6 +1018,19 @@ private fun TripPlaceItem(
                                 maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
+                    // Chi phí ước tính
+                    if (item.tripPlace.estimatedCost > 0) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("💰", fontSize = 10.sp)
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                formatCostFull(item.tripPlace.estimatedCost),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF2E7D32),
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
                     // Địa chỉ
                     Text(
                         item.place.address,
@@ -1049,14 +1089,24 @@ private fun AddPlaceBottomSheet(
     existingPlaceIds: Set<String>,
     tripStartDate: String,
     tripEndDate: String,
-    onAdd: (placeId: String, visitDate: String, visitTime: String, note: String) -> Unit,
-    onDismiss: () -> Unit
+    onAdd: (placeId: String, visitDate: String, visitTime: String, note: String, estimatedCost: Long) -> Unit,
+    onDismiss: () -> Unit,
+    estimateCostFn: (Place) -> Long = { 0L }
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedPlace by remember { mutableStateOf<Place?>(null) }
     var visitDate by remember { mutableStateOf(tripStartDate) }
     var visitTime by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
+    var costInput by remember { mutableStateOf("") }
+
+    // Khi chọn địa điểm → tự điền chi phí ước tính
+    LaunchedEffect(selectedPlace) {
+        selectedPlace?.let { place ->
+            val estimated = estimateCostFn(place)
+            costInput = if (estimated > 0) estimated.toString() else ""
+        }
+    }
 
     val filteredPlaces = allPlaces.filter {
         it.name.contains(searchQuery, ignoreCase = true) ||
@@ -1100,25 +1150,17 @@ private fun AddPlaceBottomSheet(
                         PlacePickerItem(
                             place = place,
                             alreadyAdded = alreadyAdded,
-                            onClick = {
-                                if (!alreadyAdded) selectedPlace = place
-                            }
+                            onClick = { if (!alreadyAdded) selectedPlace = place }
                         )
                     }
                 }
             } else {
-                // ── Bước 2: Đặt ngày/giờ/ghi chú ────────────────────────────
-                // Preview địa điểm đã chọn
+                // ── Bước 2: Đặt ngày/giờ/chi phí/ghi chú ────────────────────
                 Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    ),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         AsyncImage(
                             model = selectedPlace!!.imageUrl.ifBlank { "https://via.placeholder.com/48" },
                             contentDescription = null,
@@ -1127,14 +1169,13 @@ private fun AddPlaceBottomSheet(
                         )
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(selectedPlace!!.name,
-                                fontWeight = FontWeight.Bold,
+                            Text(selectedPlace!!.name, fontWeight = FontWeight.Bold,
                                 style = MaterialTheme.typography.titleSmall)
                             Text(selectedPlace!!.address,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer)
                         }
-                        TextButton(onClick = { selectedPlace = null }) { Text("Đổi") }
+                        TextButton(onClick = { selectedPlace = null; costInput = "" }) { Text("Đổi") }
                     }
                 }
 
@@ -1146,11 +1187,9 @@ private fun AddPlaceBottomSheet(
                     label = { Text("Ngày tham quan") },
                     placeholder = { Text("dd/MM/yyyy") },
                     leadingIcon = { Icon(Icons.Filled.CalendarToday, null) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(), singleLine = true,
                     supportingText = { Text("Để trống nếu chưa xác định") }
                 )
-
                 Spacer(Modifier.height(8.dp))
 
                 OutlinedTextField(
@@ -1159,11 +1198,41 @@ private fun AddPlaceBottomSheet(
                     label = { Text("Giờ tham quan") },
                     placeholder = { Text("HH:mm  (vd: 09:00)") },
                     leadingIcon = { Icon(Icons.Filled.Schedule, null) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(), singleLine = true,
                     supportingText = { Text("Để trống nếu chưa xác định") }
                 )
+                Spacer(Modifier.height(8.dp))
 
+                // ── Chi phí ước tính ─────────────────────────────────────────
+                val estimatedHint = selectedPlace?.let { estimateCostFn(it) } ?: 0L
+                OutlinedTextField(
+                    value = costInput,
+                    onValueChange = { v -> costInput = v.filter { it.isDigit() } },
+                    label = { Text("Chi phí ước tính (VNĐ)") },
+                    placeholder = { Text(if (estimatedHint > 0) "Gợi ý: ${formatCost(estimatedHint)}" else "0") },
+                    leadingIcon = { Text("💰", modifier = Modifier.padding(start = 12.dp)) },
+                    trailingIcon = {
+                        if (costInput.isNotBlank()) {
+                            val v = costInput.toLongOrNull() ?: 0L
+                            Text(
+                                formatCost(v),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF2E7D32),
+                                modifier = Modifier.padding(end = 12.dp),
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(), singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                    ),
+                    supportingText = {
+                        if (estimatedHint > 0 && costInput.isBlank())
+                            Text("App ước tính: ${formatCost(estimatedHint)} • Chỉnh lại nếu biết chính xác",
+                                color = MaterialTheme.colorScheme.primary)
+                    }
+                )
                 Spacer(Modifier.height(8.dp))
 
                 OutlinedTextField(
@@ -1172,15 +1241,16 @@ private fun AddPlaceBottomSheet(
                     label = { Text("Ghi chú") },
                     placeholder = { Text("Vd: Đặt vé trước, mang kem chống nắng...") },
                     leadingIcon = { Icon(Icons.Filled.Notes, null) },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 2
+                    modifier = Modifier.fillMaxWidth(), minLines = 2
                 )
-
                 Spacer(Modifier.height(20.dp))
 
                 Button(
                     onClick = {
-                        onAdd(selectedPlace!!.placeId, visitDate.trim(), visitTime.trim(), note.trim())
+                        val cost = costInput.toLongOrNull()
+                            ?: estimatedHint
+                        onAdd(selectedPlace!!.placeId, visitDate.trim(),
+                            visitTime.trim(), note.trim(), cost)
                     },
                     modifier = Modifier.fillMaxWidth().height(52.dp)
                 ) {
@@ -1198,6 +1268,19 @@ private fun formatCost(amount: Long): String = when {
     amount >= 1_000_000 -> "${amount / 1_000_000}tr"
     amount >= 1_000     -> "${amount / 1_000}k"
     else                -> "${amount}đ"
+}
+
+private fun formatCostFull(amount: Long): String {
+    return when {
+        amount >= 1_000_000 -> {
+            val millions = amount / 1_000_000
+            val remainder = (amount % 1_000_000) / 1_000
+            if (remainder > 0) "${millions},${remainder.toString().padStart(3,'0').trimEnd('0')}tr"
+            else "${millions}tr"
+        }
+        amount >= 1_000 -> "${String.format("%,d", amount)}đ"
+        else            -> "${amount}đ"
+    }
 }
 
 // ── Item chọn địa điểm ───────────────────────────────────────────────────────
@@ -1263,37 +1346,57 @@ private fun EditTripPlaceDialog(
     var visitDate by remember { mutableStateOf(item.tripPlace.visitDate) }
     var visitTime by remember { mutableStateOf(item.tripPlace.visitTime) }
     var note by remember { mutableStateOf(item.tripPlace.note) }
+    var costInput by remember {
+        mutableStateOf(if (item.tripPlace.estimatedCost > 0) item.tripPlace.estimatedCost.toString() else "")
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Chỉnh sửa: ${item.place.name}") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 OutlinedTextField(
-                    value = visitDate,
-                    onValueChange = { visitDate = it },
+                    value = visitDate, onValueChange = { visitDate = it },
                     label = { Text("Ngày tham quan") },
                     placeholder = { Text("dd/MM/yyyy") },
                     leadingIcon = { Icon(Icons.Filled.CalendarToday, null) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                    modifier = Modifier.fillMaxWidth(), singleLine = true
                 )
                 OutlinedTextField(
-                    value = visitTime,
-                    onValueChange = { visitTime = it },
+                    value = visitTime, onValueChange = { visitTime = it },
                     label = { Text("Giờ tham quan") },
                     placeholder = { Text("HH:mm") },
                     leadingIcon = { Icon(Icons.Filled.Schedule, null) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                    modifier = Modifier.fillMaxWidth(), singleLine = true
                 )
                 OutlinedTextField(
-                    value = note,
-                    onValueChange = { note = it },
+                    value = costInput,
+                    onValueChange = { v -> costInput = v.filter { it.isDigit() } },
+                    label = { Text("Chi phí ước tính (VNĐ)") },
+                    leadingIcon = { Text("💰", modifier = Modifier.padding(start = 12.dp)) },
+                    trailingIcon = {
+                        val v = costInput.toLongOrNull() ?: 0L
+                        if (v > 0) Text(
+                            formatCostFull(v),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF2E7D32),
+                            modifier = Modifier.padding(end = 12.dp),
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(), singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                    )
+                )
+                OutlinedTextField(
+                    value = note, onValueChange = { note = it },
                     label = { Text("Ghi chú") },
                     leadingIcon = { Icon(Icons.Filled.Notes, null) },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 2
+                    modifier = Modifier.fillMaxWidth(), minLines = 2
                 )
             }
         },
@@ -1302,12 +1405,11 @@ private fun EditTripPlaceDialog(
                 onSave(item.tripPlace.copy(
                     visitDate = visitDate.trim(),
                     visitTime = visitTime.trim(),
-                    note = note.trim()
+                    note = note.trim(),
+                    estimatedCost = costInput.toLongOrNull() ?: item.tripPlace.estimatedCost
                 ))
             }) { Text("Lưu") }
         },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Hủy") }
-        }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Hủy") } }
     )
 }

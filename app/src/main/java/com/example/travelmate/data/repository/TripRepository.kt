@@ -86,7 +86,8 @@ class TripRepository {
         placeId: String,
         visitDate: String = "",
         visitTime: String = "",
-        note: String = ""
+        note: String = "",
+        estimatedCost: Long = 0L
     ): Result<Unit> {
         return try {
             val currentCount = tripPlacesCollection
@@ -100,6 +101,7 @@ class TripRepository {
                 visitDate = visitDate,
                 visitTime = visitTime,
                 note = note,
+                estimatedCost = estimatedCost,
                 orderIndex = currentCount
             )
             // Batch: thêm TripPlace + cập nhật placeCount cùng lúc
