@@ -57,7 +57,6 @@ class WeatherRepository {
             // Parse tất cả data points từ API → nhóm theo ngày
             // Format ngày từ API: "yyyy-MM-dd HH:mm:ss"
             val apiFmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-            val displayFmt = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
 
             // Map: "dd/MM/yyyy" → list các reading trong ngày đó
             data class DayReading(
@@ -67,11 +66,14 @@ class WeatherRepository {
             )
             val dayMap = mutableMapOf<String, MutableList<DayReading>>()
 
+            // Format output chuẩn dd/MM/yyyy
+            val outputFmt = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
+
             for (i in 0 until list.length()) {
                 val item = list.getJSONObject(i)
                 val dtTxt = item.getString("dt_txt")
                 val date = apiFmt.parse(dtTxt) ?: continue
-                val dayKey = displayFmt.format(date)
+                val dayKey = outputFmt.format(date)
 
                 val main = item.getJSONObject("main")
                 val weather = item.getJSONArray("weather").getJSONObject(0)
