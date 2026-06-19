@@ -277,21 +277,18 @@ class TripViewModel : ViewModel() {
                 return@launch
             }
 
-            loadTripPlacesWithDetail(tripId)
-
             // ── Ý tưởng 2: Gợi ý thêm địa điểm còn slot trống ──────────────
+            // Dùng toSchedule (data cũ) để tính suggestions trước khi reload
             val suggestions = if (allAvailablePlaces.isNotEmpty()) {
                 val currentPlaceIds = _tripPlacesWithDetail.value
                     .map { it.place.placeId }.toSet()
                 val currentCity = toSchedule.firstOrNull()?.place?.city ?: ""
 
-                // Tìm ngày còn ít hơn maxPerDay địa điểm
                 val daysWithSlot = dates.filter { date ->
                     val count = updatedPlaces.count { it.visitDate == date }
                     count < maxPerDay
                 }
 
-                // Gợi ý địa điểm cùng city, chưa trong trip, theo category phù hợp
                 val suggested = mutableListOf<SuggestedPlace>()
                 for (date in daysWithSlot.take(3)) {
                     val existingCategories = updatedPlaces
@@ -323,6 +320,7 @@ class TripViewModel : ViewModel() {
                 acc + estimateHours(item.place.category)
             }
 
+            // Set result TRƯỚC → UI dialog hiện ngay
             _autoScheduleResult.value = AutoScheduleResult(
                 scheduledCount = updatedPlaces.size,
                 totalDays = dates.size,
@@ -332,6 +330,8 @@ class TripViewModel : ViewModel() {
                 estimatedHours = estimatedHours
             )
 
+            // Reload places SAU → cập nhật lịch trình hiển thị
+            loadTripPlacesWithDetail(tripId)
             _isLoading.value = false
         }
     }
