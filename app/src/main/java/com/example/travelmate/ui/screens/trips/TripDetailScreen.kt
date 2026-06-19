@@ -301,9 +301,9 @@ fun TripDetailScreen(
                             }
 
                             // ── Nút Auto-schedule ─────────────────────────────
-                            val unscheduledCount = tripPlacesWithDetail
-                                .count { it.tripPlace.visitDate.isBlank() }
-                            if (unscheduledCount > 0) {
+                            if (tripPlacesWithDetail.isNotEmpty()) {
+                                val unscheduledCount = tripPlacesWithDetail
+                                    .count { it.tripPlace.visitDate.isBlank() }
                                 Spacer(Modifier.height(8.dp))
                                 Button(
                                     onClick = { showAutoScheduleConfirm = true },
@@ -318,7 +318,10 @@ fun TripDetailScreen(
                                         modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(8.dp))
                                     Text(
-                                        "Tự động xếp lịch ($unscheduledCount địa điểm)",
+                                        if (unscheduledCount > 0)
+                                            "Tự động xếp lịch ($unscheduledCount chưa có ngày)"
+                                        else
+                                            "Sắp xếp lại lịch trình",
                                         fontWeight = FontWeight.SemiBold
                                     )
                                 }
@@ -424,20 +427,24 @@ fun TripDetailScreen(
     // ── Dialog xác nhận auto-schedule ───────────────────────────────────────
     if (showAutoScheduleConfirm) {
         val unscheduledCount = tripPlacesWithDetail.count { it.tripPlace.visitDate.isBlank() }
+        val totalCount = tripPlacesWithDetail.size
+        val isReschedule = unscheduledCount == 0
         AlertDialog(
             onDismissRequest = { showAutoScheduleConfirm = false },
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("✨", fontSize = 20.sp)
                     Spacer(Modifier.width(8.dp))
-                    Text("Tự động xếp lịch")
+                    Text(if (isReschedule) "Sắp xếp lại lịch trình" else "Tự động xếp lịch")
                 }
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "App sẽ tự động phân bổ $unscheduledCount địa điểm chưa có lịch " +
-                        "vào các ngày trong chuyến đi.",
+                        if (isReschedule)
+                            "App sẽ phân bổ lại toàn bộ $totalCount địa điểm vào các ngày trong chuyến đi."
+                        else
+                            "App sẽ tự động phân bổ $unscheduledCount địa điểm chưa có lịch vào các ngày trong chuyến đi.",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Surface(
@@ -467,7 +474,10 @@ fun TripDetailScreen(
                 Button(
                     onClick = {
                         trip?.let { t ->
-                            tripViewModel.autoSchedule(tripId, t.startDate, t.endDate)
+                            tripViewModel.autoSchedule(
+                                tripId, t.startDate, t.endDate,
+                                rescheduleAll = isReschedule
+                            )
                         }
                         showAutoScheduleConfirm = false
                     },
@@ -476,7 +486,7 @@ fun TripDetailScreen(
                 ) {
                     Icon(Icons.Filled.AutoAwesome, null, Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Xếp lịch ngay")
+                    Text(if (isReschedule) "Sắp xếp lại" else "Xếp lịch ngay")
                 }
             },
             dismissButton = {

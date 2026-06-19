@@ -200,15 +200,17 @@ class TripViewModel : ViewModel() {
      * 4. Gán giờ tham quan gợi ý theo slot trong ngày
      * 5. Lưu tất cả lên Firestore bằng batch update
      */
-    fun autoSchedule(tripId: String, startDate: String, endDate: String) {
+    fun autoSchedule(tripId: String, startDate: String, endDate: String, rescheduleAll: Boolean = false) {
         viewModelScope.launch {
             _isLoading.value = true
 
-            // Chỉ lấy địa điểm chưa được xếp ngày
-            val unscheduled = _tripPlacesWithDetail.value
-                .filter { it.tripPlace.visitDate.isBlank() }
+            // Nếu rescheduleAll → lấy tất cả, nếu không → chỉ lấy chưa xếp ngày
+            val toSchedule = if (rescheduleAll)
+                _tripPlacesWithDetail.value
+            else
+                _tripPlacesWithDetail.value.filter { it.tripPlace.visitDate.isBlank() }
 
-            if (unscheduled.isEmpty()) {
+            if (toSchedule.isEmpty()) {
                 _successMessage.value = "Tất cả địa điểm đã có lịch rồi!"
                 _isLoading.value = false
                 return@launch
@@ -224,7 +226,7 @@ class TripViewModel : ViewModel() {
 
             // Số địa điểm tối đa mỗi ngày (chia đều, tối thiểu 1)
             val maxPerDay = maxOf(1, kotlin.math.ceil(
-                unscheduled.size.toDouble() / dates.size
+                toSchedule.size.toDouble() / dates.size
             ).toInt())
 
             // Giờ tham quan gợi ý theo thứ tự trong ngày
@@ -237,10 +239,10 @@ class TripViewModel : ViewModel() {
             val updatedPlaces = mutableListOf<com.example.travelmate.data.model.TripPlace>()
 
             for (date in dates) {
-                if (placeIndex >= unscheduled.size) break
+                if (placeIndex >= toSchedule.size) break
                 var slotIndex = 0
-                while (slotIndex < maxPerDay && placeIndex < unscheduled.size) {
-                    val tp = unscheduled[placeIndex].tripPlace
+                while (slotIndex < maxPerDay && placeIndex < toSchedule.size) {
+                    val tp = toSchedule[placeIndex].tripPlace
                     val suggestedTime = suggestedTimes.getOrElse(slotIndex) { "" }
                     updatedPlaces.add(
                         tp.copy(
