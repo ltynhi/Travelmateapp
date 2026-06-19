@@ -48,10 +48,10 @@ class TripViewModel : ViewModel() {
         }
     }
 
-    fun createTrip(userId: String, tripName: String, startDate: String, endDate: String) {
+    fun createTrip(userId: String, tripName: String, startDate: String, endDate: String, destination: String = "") {
         viewModelScope.launch {
             _isLoading.value = true
-            val trip = Trip(userId = userId, tripName = tripName, startDate = startDate, endDate = endDate)
+            val trip = Trip(userId = userId, tripName = tripName, startDate = startDate, endDate = endDate, destination = destination)
             repository.createTrip(trip).fold(
                 onSuccess = { newTrip ->
                     // Thêm local thay vì reload

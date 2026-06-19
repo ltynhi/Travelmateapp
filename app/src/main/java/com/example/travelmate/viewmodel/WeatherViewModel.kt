@@ -39,37 +39,46 @@ class WeatherViewModel : ViewModel() {
 
         val dates = generateDateRange(startDate, endDate)
 
-        // Nếu parse ngày thất bại hoặc trip đã qua → dùng 3 ngày từ hôm nay
-        val effectiveDates = if (dates.isEmpty()) {
-            val fmt = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
-            val today = Calendar.getInstance()
-            (0..2).map { offset ->
-                val c = Calendar.getInstance().apply { time = today.time }
-                c.add(Calendar.DAY_OF_MONTH, offset)
-                fmt.format(c.time)
+        // Ngày trip quá xa (> 5 ngày tới) → API không có data → báo rõ, không fallback
+        if (dates.isEmpty()) {
+            _weatherState.value = WeatherState.Error(
+                "Thời tiết chỉ dự báo được trong 5 ngày tới"
+            )
+            return
+        }
+
+        // Kiểm tra ngày đầu trip có trong 5 ngày tới không
+        val fmt = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
+        val today = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }
+        val future5 = Calendar.getInstance().apply {
+            time = today.time; add(Calendar.DAY_OF_MONTH, 5)
+        }
+        val firstDate = try { fmt.parse(dates.first()) } catch (_: Exception) { null }
+
+        val effectiveDates = when {
+            firstDate == null -> {
+                _weatherState.value = WeatherState.Error("Ngày trip không hợp lệ")
+                return
             }
-        } else {
-            // Kiểm tra xem ngày trip có nằm trong 5 ngày tới không
-            // Nếu trip đã qua → vẫn gọi API với ngày hôm nay để hiển thị thời tiết hiện tại
-            val fmt = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
-            val today = Calendar.getInstance().apply {
-                set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-            }
-            val future5 = Calendar.getInstance().apply {
-                time = today.time; add(Calendar.DAY_OF_MONTH, 5)
-            }
-            val firstDate = try { fmt.parse(dates.first()) } catch (_: Exception) { null }
-            if (firstDate != null && firstDate.before(today.time)) {
-                // Trip đã qua → dùng hôm nay
+            firstDate.before(today.time) -> {
+                // Trip đã qua → hiện thời tiết từ hôm nay (vẫn hữu ích)
                 (0 until minOf(dates.size, 3)).map { offset ->
                     val c = Calendar.getInstance().apply { time = today.time }
                     c.add(Calendar.DAY_OF_MONTH, offset)
                     fmt.format(c.time)
                 }
-            } else {
-                dates
             }
+            firstDate.after(future5.time) -> {
+                // Trip quá xa → không có data forecast
+                _weatherState.value = WeatherState.Error(
+                    "Chưa có dự báo cho ${dates.first()} (chỉ xem được 5 ngày tới)"
+                )
+                return
+            }
+            else -> dates
         }
 
         if (effectiveDates.isEmpty()) return
@@ -87,7 +96,7 @@ class WeatherViewModel : ViewModel() {
             repository.getWeatherForTrip(cityEn, effectiveDates).fold(
                 onSuccess = { map ->
                     _weatherState.value = if (map.isEmpty()) {
-                        WeatherState.Error("Không có dữ liệu thời tiết")
+                        WeatherState.Error("Không có dữ liệu thời tiết cho khu vực này")
                     } else {
                         WeatherState.Success(map)
                     }

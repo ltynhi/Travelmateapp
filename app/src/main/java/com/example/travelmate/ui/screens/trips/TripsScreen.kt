@@ -44,6 +44,7 @@ fun TripsScreen(
     var tripName by remember { mutableStateOf("") }
     var startDate by remember { mutableStateOf("") }
     var endDate by remember { mutableStateOf("") }
+    var destination by remember { mutableStateOf("") }
     var selectedTab by remember { mutableStateOf(0) }
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -205,6 +206,13 @@ fun TripsScreen(
                         shape = RoundedCornerShape(12.dp)
                     )
                     OutlinedTextField(
+                        value = destination, onValueChange = { destination = it },
+                        label = { Text("Điểm đến") },
+                        placeholder = { Text("Vd: Đà Nẵng, Huế, Hà Nội...") },
+                        modifier = Modifier.fillMaxWidth(), singleLine = true,
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    OutlinedTextField(
                         value = startDate, onValueChange = { startDate = it },
                         label = { Text("Ngày bắt đầu (dd/MM/yyyy)") },
                         modifier = Modifier.fillMaxWidth(), singleLine = true,
@@ -223,10 +231,10 @@ fun TripsScreen(
                     onClick = {
                         if (tripName.isNotBlank() && startDate.isNotBlank() && endDate.isNotBlank()) {
                             currentUser?.let { user ->
-                                tripViewModel.createTrip(user.userId, tripName, startDate, endDate)
+                                tripViewModel.createTrip(user.userId, tripName, startDate, endDate, destination)
                             }
                             showCreateDialog = false
-                            tripName = ""; startDate = ""; endDate = ""
+                            tripName = ""; startDate = ""; endDate = ""; destination = ""
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = SkyBlue40)

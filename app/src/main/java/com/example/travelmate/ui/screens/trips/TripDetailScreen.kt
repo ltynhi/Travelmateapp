@@ -82,6 +82,7 @@ fun TripDetailScreen(
     var editTripName by remember { mutableStateOf("") }
     var editStartDate by remember { mutableStateOf("") }
     var editEndDate by remember { mutableStateOf("") }
+    var editDestination by remember { mutableStateOf("") }
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -114,13 +115,22 @@ fun TripDetailScreen(
         }
     }
 
-    // Khi trip load xong → lấy thành phố từ địa điểm đầu tiên → gọi API thời tiết
+    // Reset weather khi đổi trip
+    LaunchedEffect(tripId) {
+        weatherViewModel.reset()
+    }
+
+    // Khi trip load xong → lấy thành phố → gọi API thời tiết
     LaunchedEffect(selectedTrip, tripPlacesWithDetail) {
         val t = selectedTrip ?: return@LaunchedEffect
         if (t.startDate.isBlank() || t.endDate.isBlank()) return@LaunchedEffect
-        // Lấy thành phố từ địa điểm đầu tiên trong trip
-        val city = tripPlacesWithDetail.firstOrNull()?.place?.city
-            ?: return@LaunchedEffect
+        // Ưu tiên destination của trip, fallback sang city của địa điểm đầu tiên
+        val city = when {
+            t.destination.isNotBlank() -> t.destination
+            tripPlacesWithDetail.isNotEmpty() ->
+                tripPlacesWithDetail.firstOrNull()?.place?.city ?: return@LaunchedEffect
+            else -> return@LaunchedEffect
+        }
         weatherViewModel.loadWeather(city, t.startDate, t.endDate)
     }
 
@@ -153,6 +163,7 @@ fun TripDetailScreen(
                             editTripName = it.tripName
                             editStartDate = it.startDate
                             editEndDate = it.endDate
+                            editDestination = it.destination
                             showEditTripDialog = true
                         }
                     }) {
@@ -204,6 +215,17 @@ fun TripDetailScreen(
                                     color = MaterialTheme.colorScheme.onPrimaryContainer)
                             }
                             Spacer(modifier = Modifier.height(4.dp))
+                            if (trip.destination.isNotBlank()) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("📍", fontSize = 14.sp)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(trip.destination,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                            }
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Filled.LocationOn, null,
                                     Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
@@ -476,6 +498,12 @@ fun TripDetailScreen(
                         modifier = Modifier.fillMaxWidth(), singleLine = true
                     )
                     OutlinedTextField(
+                        value = editDestination, onValueChange = { editDestination = it },
+                        label = { Text("Điểm đến") },
+                        placeholder = { Text("Vd: Đà Nẵng, Huế, Hà Nội...") },
+                        modifier = Modifier.fillMaxWidth(), singleLine = true
+                    )
+                    OutlinedTextField(
                         value = editStartDate, onValueChange = { editStartDate = it },
                         label = { Text("Ngày bắt đầu (dd/MM/yyyy)") },
                         modifier = Modifier.fillMaxWidth(), singleLine = true
@@ -492,7 +520,8 @@ fun TripDetailScreen(
                     trip?.let { t ->
                         currentUser?.let { user ->
                             tripViewModel.updateTrip(
-                                t.copy(tripName = editTripName, startDate = editStartDate, endDate = editEndDate),
+                                t.copy(tripName = editTripName, startDate = editStartDate,
+                                    endDate = editEndDate, destination = editDestination),
                                 user.userId
                             )
                         }

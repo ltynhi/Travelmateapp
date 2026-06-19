@@ -6,6 +6,7 @@ data class Trip(
     val tripName: String = "",
     val startDate: String = "",
     val endDate: String = "",
+    val destination: String = "",       // Điểm đến (thành phố/tỉnh) — dùng cho weather
     val placeCount: Int = 0,
     val memberIds: List<String> = emptyList()  // Danh sách userId thành viên (không gồm chủ)
 )
