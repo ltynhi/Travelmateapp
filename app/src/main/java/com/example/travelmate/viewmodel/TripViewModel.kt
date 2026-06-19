@@ -191,6 +191,160 @@ class TripViewModel : ViewModel() {
 
     fun getTripCount(): Int = _trips.value.size
 
+    // ── Suggest itinerary state ───────────────────────────────────────────────
+    private val _suggestItineraryState = MutableStateFlow<SuggestItineraryState>(SuggestItineraryState.Idle)
+    val suggestItineraryState: StateFlow<SuggestItineraryState> = _suggestItineraryState
+
+    fun clearSuggestState() { _suggestItineraryState.value = SuggestItineraryState.Idle }
+
+    /**
+     * Tạo lịch trình gợi ý tự động cho trip chưa có địa điểm.
+     * Chọn địa điểm từ database dựa trên city của trip,
+     * ưu tiên rating cao, đa dạng category, phân bổ theo ngày.
+     *
+     * @param trip           Trip cần tạo lịch
+     * @param allPlaces      Toàn bộ địa điểm từ database
+     * @param maxPerDay      Số địa điểm tối đa mỗi ngày (mặc định 3)
+     */
+    fun generateItinerarySuggestion(
+        trip: com.example.travelmate.data.model.Trip,
+        allPlaces: List<com.example.travelmate.data.model.Place>,
+        maxPerDay: Int = 3
+    ) {
+        viewModelScope.launch {
+            _suggestItineraryState.value = SuggestItineraryState.Loading
+
+            val destination = trip.destination.ifBlank {
+                // fallback: lấy city từ địa điểm đầu tiên nếu có
+                _tripPlacesWithDetail.value.firstOrNull()?.place?.city ?: ""
+            }
+
+            if (destination.isBlank()) {
+                _suggestItineraryState.value = SuggestItineraryState.Error(
+                    "Trip chưa có điểm đến. Hãy chỉnh sửa trip và nhập Điểm đến trước."
+                )
+                return@launch
+            }
+
+            // Lấy địa điểm cùng thành phố
+            val cityPlaces = allPlaces.filter {
+                it.city.contains(destination, ignoreCase = true) ||
+                destination.contains(it.city, ignoreCase = true)
+            }
+
+            if (cityPlaces.isEmpty()) {
+                _suggestItineraryState.value = SuggestItineraryState.Error(
+                    "Chưa có địa điểm nào tại $destination trong hệ thống."
+                )
+                return@launch
+            }
+
+            val dates = generateDateRange(trip.startDate, trip.endDate)
+            if (dates.isEmpty()) {
+                _suggestItineraryState.value = SuggestItineraryState.Error(
+                    "Ngày đi không hợp lệ. Hãy kiểm tra lại ngày bắt đầu/kết thúc."
+                )
+                return@launch
+            }
+
+            val totalSlots = dates.size * maxPerDay
+
+            // Chọn địa điểm thông minh:
+            // - Ưu tiên rating cao
+            // - Đa dạng category (mỗi category không quá 2 địa điểm)
+            // - Tối đa totalSlots địa điểm
+            val categoryCount = mutableMapOf<String, Int>()
+            val maxPerCategory = maxOf(1, totalSlots / 4) // mỗi category tối đa ~25%
+
+            val selected = cityPlaces
+                .sortedByDescending { it.rating }
+                .filter { place ->
+                    val count = categoryCount.getOrDefault(place.category, 0)
+                    if (count < maxPerCategory) {
+                        categoryCount[place.category] = count + 1
+                        true
+                    } else false
+                }
+                .take(totalSlots)
+
+            if (selected.isEmpty()) {
+                _suggestItineraryState.value = SuggestItineraryState.Error(
+                    "Không tìm được địa điểm phù hợp."
+                )
+                return@launch
+            }
+
+            // Phân bổ vào ngày + gán giờ theo category
+            val suggestions = mutableListOf<SuggestedItineraryItem>()
+            var idx = 0
+            for (date in dates) {
+                var slot = 0
+                while (slot < maxPerDay && idx < selected.size) {
+                    val place = selected[idx]
+                    suggestions.add(
+                        SuggestedItineraryItem(
+                            place = place,
+                            visitDate = date,
+                            visitTime = categoryToTime(place.category, slot),
+                            estimatedCost = estimateCostForPlace(place)
+                        )
+                    )
+                    idx++
+                    slot++
+                }
+            }
+
+            val totalCost = suggestions.sumOf { it.estimatedCost }
+            val totalHours = suggestions.sumOf { estimateHours(it.place.category) }
+
+            _suggestItineraryState.value = SuggestItineraryState.Ready(
+                items = suggestions,
+                destination = destination,
+                totalDays = dates.size,
+                totalCost = totalCost,
+                totalHours = totalHours
+            )
+        }
+    }
+
+    /**
+     * Xác nhận và thêm lịch trình gợi ý vào trip.
+     */
+    fun confirmSuggestedItinerary(
+        tripId: String,
+        items: List<SuggestedItineraryItem>
+    ) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            var hasError = false
+            for (item in items) {
+                repository.addPlaceToTrip(
+                    tripId = tripId,
+                    placeId = item.place.placeId,
+                    visitDate = item.visitDate,
+                    visitTime = item.visitTime,
+                    note = "",
+                    estimatedCost = item.estimatedCost
+                ).onFailure { hasError = true }
+            }
+            if (hasError) {
+                _error.value = "Có lỗi khi tạo lịch trình"
+            } else {
+                _successMessage.value = "✅ Đã tạo lịch trình ${items.size} địa điểm!"
+                loadTripPlacesWithDetail(tripId)
+                // Cập nhật placeCount
+                _trips.value = _trips.value.map { t ->
+                    if (t.tripId == tripId) t.copy(placeCount = t.placeCount + items.size) else t
+                }
+                _selectedTrip.value = _selectedTrip.value?.let { t ->
+                    if (t.tripId == tripId) t.copy(placeCount = t.placeCount + items.size) else t
+                }
+            }
+            _suggestItineraryState.value = SuggestItineraryState.Idle
+            _isLoading.value = false
+        }
+    }
+
     // ── Auto-schedule state ───────────────────────────────────────────────────
     private val _autoScheduleResult = MutableStateFlow<AutoScheduleResult?>(null)
     val autoScheduleResult: StateFlow<AutoScheduleResult?> = _autoScheduleResult
@@ -461,3 +615,25 @@ data class AutoScheduleResult(
     val estimatedMaxCost: Long = 0L,
     val estimatedHours: Int = 0
 )
+
+// ── Data classes gợi ý lịch trình ────────────────────────────────────────────
+
+data class SuggestedItineraryItem(
+    val place: com.example.travelmate.data.model.Place,
+    val visitDate: String,
+    val visitTime: String,
+    val estimatedCost: Long
+)
+
+sealed class SuggestItineraryState {
+    object Idle : SuggestItineraryState()
+    object Loading : SuggestItineraryState()
+    data class Ready(
+        val items: List<SuggestedItineraryItem>,
+        val destination: String,
+        val totalDays: Int,
+        val totalCost: Long,
+        val totalHours: Int
+    ) : SuggestItineraryState()
+    data class Error(val message: String) : SuggestItineraryState()
+}

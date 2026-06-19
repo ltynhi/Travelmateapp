@@ -48,6 +48,7 @@ import com.example.travelmate.viewmodel.PlaceViewModel
 import com.example.travelmate.viewmodel.TripViewModel
 import com.example.travelmate.viewmodel.WeatherViewModel
 import com.example.travelmate.viewmodel.WeatherState
+import com.example.travelmate.viewmodel.SuggestItineraryState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,8 +79,10 @@ fun TripDetailScreen(
     var showDeleteConfirm by remember { mutableStateOf<TripPlaceWithDetail?>(null) }
     var showAutoScheduleConfirm by remember { mutableStateOf(false) }
     var showAutoScheduleResult by remember { mutableStateOf(false) }
+    var showSuggestDialog by remember { mutableStateOf(false) }
 
     val autoScheduleResult by tripViewModel.autoScheduleResult.collectAsState()
+    val suggestItineraryState by tripViewModel.suggestItineraryState.collectAsState()
 
     // Edit trip fields
     var editTripName by remember { mutableStateOf("") }
@@ -121,6 +124,11 @@ fun TripDetailScreen(
     // Khi có kết quả auto-schedule → hiện dialog tóm tắt
     LaunchedEffect(autoScheduleResult) {
         if (autoScheduleResult != null) showAutoScheduleResult = true
+    }
+
+    // Khi suggest itinerary sẵn → hiện dialog preview
+    LaunchedEffect(suggestItineraryState) {
+        if (suggestItineraryState is SuggestItineraryState.Ready) showSuggestDialog = true
     }
 
     // Reset weather khi đổi trip
@@ -333,6 +341,54 @@ fun TripDetailScreen(
                                 }
                             }
 
+                            // ── Nút Tạo lịch trình gợi ý (khi chưa có địa điểm) ──
+                            if (tripPlacesWithDetail.isEmpty()) {
+                                Spacer(Modifier.height(8.dp))
+                                Button(
+                                    onClick = {
+                                        tripViewModel.generateItinerarySuggestion(
+                                            trip = trip,
+                                            allPlaces = allPlaces
+                                        )
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF1565C0),
+                                        contentColor = Color.White
+                                    )
+                                ) {
+                                    when (suggestItineraryState) {
+                                        is SuggestItineraryState.Loading -> {
+                                            CircularProgressIndicator(
+                                                color = Color.White,
+                                                modifier = Modifier.size(18.dp),
+                                                strokeWidth = 2.dp
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                            Text("Đang tạo gợi ý...", fontWeight = FontWeight.SemiBold)
+                                        }
+                                        else -> {
+                                            Text("✨", fontSize = 16.sp)
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(
+                                                "Tạo lịch trình gợi ý cho tôi",
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                    }
+                                }
+                                // Hiện lỗi nếu có
+                                if (suggestItineraryState is SuggestItineraryState.Error) {
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        (suggestItineraryState as SuggestItineraryState.Error).message,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+
                             // ── Nút Auto-schedule ─────────────────────────────
                             if (tripPlacesWithDetail.isNotEmpty()) {
                                 val unscheduledCount = tripPlacesWithDetail
@@ -455,6 +511,147 @@ fun TripDetailScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirm = null }) { Text("Hủy") }
+            }
+        )
+    }
+
+    // ── Dialog preview lịch trình gợi ý ─────────────────────────────────────
+    if (showSuggestDialog && suggestItineraryState is SuggestItineraryState.Ready) {
+        val state = suggestItineraryState as SuggestItineraryState.Ready
+        AlertDialog(
+            onDismissRequest = {
+                showSuggestDialog = false
+                tripViewModel.clearSuggestState()
+            },
+            title = {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("✨", fontSize = 20.sp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Gợi ý lịch trình", fontWeight = FontWeight.Bold)
+                    }
+                    Text(
+                        "📍 ${state.destination}  •  ${state.totalDays} ngày  •  ~${state.totalHours}h",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 400.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Tổng chi phí
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFF2E7D32).copy(alpha = 0.1f)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("💰", fontSize = 16.sp)
+                            Spacer(Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    "Tổng chi phí ước tính",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    formatCostFull(state.totalCost),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color(0xFF2E7D32)
+                                )
+                            }
+                        }
+                    }
+
+                    HorizontalDivider()
+
+                    // Danh sách địa điểm theo ngày
+                    val grouped = state.items.groupBy { it.visitDate }
+                    grouped.forEach { (date, items) ->
+                        // Header ngày
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color(0xFF1565C0).copy(alpha = 0.1f)
+                        ) {
+                            Text(
+                                "📅 $date",
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF1565C0)
+                            )
+                        }
+                        items.forEach { item ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(start = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                AsyncImage(
+                                    model = item.place.imageUrl,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(RoundedCornerShape(8.dp)),
+                                    contentScale = ContentScale.Crop
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        item.place.name,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text(
+                                            "⏰ ${item.visitTime}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Text(
+                                            "💰 ${formatCost(item.estimatedCost)}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color(0xFF2E7D32)
+                                        )
+                                        Text(
+                                            "⭐ ${item.place.rating}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color(0xFFE65100)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        tripViewModel.confirmSuggestedItinerary(tripId, state.items)
+                        showSuggestDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
+                ) {
+                    Text("✅ Thêm vào trip")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showSuggestDialog = false
+                    tripViewModel.clearSuggestState()
+                }) { Text("Hủy") }
             }
         )
     }
