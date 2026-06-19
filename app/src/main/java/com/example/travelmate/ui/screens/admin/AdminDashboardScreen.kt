@@ -23,10 +23,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.travelmate.viewmodel.AdminViewModel
 import com.example.travelmate.viewmodel.AuthViewModel
+import com.example.travelmate.viewmodel.ChartEntry
 
 // ── Palette ──────────────────────────────────────────────────────────────────
 private val StatColors = listOf(
@@ -51,6 +54,8 @@ fun AdminDashboardScreen(
     val currentUser by authViewModel.currentUser.collectAsState()
     val stats by adminViewModel.dashboardStats.collectAsState()
     val isLoading by adminViewModel.isLoading.collectAsState()
+    val placesByCity by adminViewModel.placesByCity.collectAsState()
+    val tripsByMonth by adminViewModel.tripsByMonth.collectAsState()
     var showLogoutDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { adminViewModel.loadDashboardStats() }
@@ -181,6 +186,30 @@ fun AdminDashboardScreen(
 
                 Spacer(Modifier.height(28.dp))
 
+                // ── Biểu đồ ──────────────────────────────────────────────────
+                if (placesByCity.isNotEmpty()) {
+                    SectionLabel("Biểu đồ thống kê")
+                    Spacer(Modifier.height(12.dp))
+
+                    // Biểu đồ 1: Địa điểm theo thành phố
+                    BarChartCard(
+                        title = "🗺️ Địa điểm theo thành phố (top 5)",
+                        entries = placesByCity,
+                        barColor = Color(0xFF6C63FF)
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+
+                    // Biểu đồ 2: Chuyến đi theo tháng
+                    BarChartCard(
+                        title = "✈️ Chuyến đi theo tháng",
+                        entries = tripsByMonth,
+                        barColor = Color(0xFF06D6A0)
+                    )
+
+                    Spacer(Modifier.height(28.dp))
+                }
+
                 // ── Management section ────────────────────────────────────────
                 SectionLabel("Quản lý")
                 Spacer(Modifier.height(12.dp))
@@ -242,6 +271,75 @@ fun AdminDashboardScreen(
                 TextButton(onClick = { showLogoutDialog = false }) { Text("Hủy") }
             }
         )
+    }
+}
+
+// ── Bar Chart Card ────────────────────────────────────────────────────────────
+@Composable
+fun BarChartCard(
+    title: String,
+    entries: List<ChartEntry>,
+    barColor: Color
+) {
+    if (entries.isEmpty()) return
+    val maxValue = entries.maxOf { it.value }.coerceAtLeast(1)
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(16.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth().height(140.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.Bottom
+            ) {
+                entries.forEach { entry ->
+                    val fraction = entry.value.toFloat() / maxValue.toFloat()
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Bottom
+                    ) {
+                        // Số trên đầu cột
+                        Text(
+                            "${entry.value}",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = barColor
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        // Cột bar
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height((fraction * 100).dp.coerceAtLeast(4.dp))
+                                .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(barColor, barColor.copy(alpha = 0.5f))
+                                    )
+                                )
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        // Label dưới cột
+                        Text(
+                            entry.label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

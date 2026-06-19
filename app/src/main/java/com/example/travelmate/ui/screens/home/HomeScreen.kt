@@ -66,6 +66,9 @@ fun HomeScreen(
     val citySuggestions by placeViewModel.citySuggestions.collectAsState()
     val selectedCategory by placeViewModel.selectedCategory.collectAsState()
     val availableCategories by placeViewModel.availableCategories.collectAsState()
+    val searchMode by placeViewModel.searchMode.collectAsState()
+    val placeNameQuery by placeViewModel.placeNameQuery.collectAsState()
+    val placeNameSuggestions by placeViewModel.placeNameSuggestions.collectAsState()
 
     // Danh mục hiển thị: nếu đã chọn thành phố → chỉ hiện danh mục có trong thành phố đó
     val displayCategories = if (selectedCity.isNotBlank() && availableCategories.isNotEmpty())
@@ -189,7 +192,7 @@ fun HomeScreen(
                 }
             }
 
-            // ── Search bar + gợi ý thành phố ────────────────────────────────
+            // ── Search bar + toggle mode ─────────────────────────────────────
             item {
                 Column(
                     modifier = Modifier
@@ -197,101 +200,206 @@ fun HomeScreen(
                         .padding(horizontal = 16.dp)
                         .offset(y = (-16).dp)
                 ) {
+                    // Toggle tabs: Thành phố | Tên địa điểm
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Surface(
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (searchMode == "city") SkyBlue40
+                                    else MaterialTheme.colorScheme.surfaceVariant,
+                            onClick = { placeViewModel.switchToCitySearch() }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(vertical = 10.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("🏙️", fontSize = 14.sp)
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    "Thành phố",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (searchMode == "city") Color.White
+                                            else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Surface(
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (searchMode == "name") SkyBlue40
+                                    else MaterialTheme.colorScheme.surfaceVariant,
+                            onClick = { placeViewModel.switchToNameSearch() }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(vertical = 10.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("🔍", fontSize = 14.sp)
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    "Tên địa điểm",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (searchMode == "name") Color.White
+                                            else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    // Search input
                     Card(
                         shape = RoundedCornerShape(20.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
                     ) {
-                        OutlinedTextField(
-                            value = cityQuery,
-                            onValueChange = { placeViewModel.onCityQueryChanged(it) },
-                            placeholder = {
-                                Text("Tìm thành phố, tỉnh...",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    if (selectedCity.isNotBlank()) Icons.Filled.LocationCity
-                                    else Icons.Filled.Search,
-                                    null,
-                                    tint = if (selectedCity.isNotBlank()) Mint40 else SkyBlue40
-                                )
-                            },
-                            trailingIcon = {
-                                if (cityQuery.isNotBlank()) {
-                                    IconButton(onClick = { placeViewModel.clearSearch() }) {
-                                        Icon(Icons.Filled.Close, null,
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(18.dp))
+                        if (searchMode == "city") {
+                            OutlinedTextField(
+                                value = cityQuery,
+                                onValueChange = { placeViewModel.onCityQueryChanged(it) },
+                                placeholder = { Text("Tìm thành phố, tỉnh...", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                                leadingIcon = {
+                                    Icon(
+                                        if (selectedCity.isNotBlank()) Icons.Filled.LocationCity else Icons.Filled.Search,
+                                        null, tint = if (selectedCity.isNotBlank()) Mint40 else SkyBlue40
+                                    )
+                                },
+                                trailingIcon = {
+                                    if (cityQuery.isNotBlank()) {
+                                        IconButton(onClick = { placeViewModel.clearSearch() }) {
+                                            Icon(Icons.Filled.Close, null,
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(18.dp))
+                                        }
                                     }
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            shape = RoundedCornerShape(20.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = if (selectedCity.isNotBlank()) Mint40 else SkyBlue40,
-                                unfocusedBorderColor = Color.Transparent,
-                                focusedContainerColor = MaterialTheme.colorScheme.surface,
-                                unfocusedContainerColor = MaterialTheme.colorScheme.surface
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true, shape = RoundedCornerShape(20.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = if (selectedCity.isNotBlank()) Mint40 else SkyBlue40,
+                                    unfocusedBorderColor = Color.Transparent,
+                                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                    unfocusedContainerColor = MaterialTheme.colorScheme.surface
+                                )
                             )
-                        )
+                        } else {
+                            OutlinedTextField(
+                                value = placeNameQuery,
+                                onValueChange = { placeViewModel.onPlaceNameQueryChanged(it) },
+                                placeholder = { Text("Nhập tên địa điểm...", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                                leadingIcon = { Icon(Icons.Filled.Search, null, tint = SkyBlue40) },
+                                trailingIcon = {
+                                    if (placeNameQuery.isNotBlank()) {
+                                        IconButton(onClick = { placeViewModel.clearSearch() }) {
+                                            Icon(Icons.Filled.Close, null,
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(18.dp))
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true, shape = RoundedCornerShape(20.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = SkyBlue40,
+                                    unfocusedBorderColor = Color.Transparent,
+                                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                    unfocusedContainerColor = MaterialTheme.colorScheme.surface
+                                )
+                            )
+                        }
                     }
 
                     // ── Gợi ý thành phố dropdown ─────────────────────────────
-                    AnimatedVisibility(
-                        visible = citySuggestions.isNotEmpty(),
-                        enter = fadeIn(), exit = fadeOut()
-                    ) {
+                    AnimatedVisibility(visible = citySuggestions.isNotEmpty() && searchMode == "city",
+                        enter = fadeIn(), exit = fadeOut()) {
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surface
-                            ),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
                         ) {
                             Column {
                                 citySuggestions.forEach { city ->
                                     Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
+                                        modifier = Modifier.fillMaxWidth()
                                             .clickable { placeViewModel.selectCity(city) }
                                             .padding(horizontal = 16.dp, vertical = 12.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(32.dp)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(SkyBlue40.copy(alpha = 0.12f)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
+                                        Box(modifier = Modifier.size(32.dp).clip(RoundedCornerShape(8.dp))
+                                            .background(SkyBlue40.copy(alpha = 0.12f)),
+                                            contentAlignment = Alignment.Center) {
                                             Text("🏙️", fontSize = 14.sp)
                                         }
                                         Spacer(Modifier.width(12.dp))
                                         Column {
-                                            Text(city,
-                                                style = MaterialTheme.typography.titleSmall,
-                                                fontWeight = FontWeight.SemiBold)
-                                            val count = places.count {
-                                                it.city.equals(city, ignoreCase = true)
-                                            }
-                                            Text("${placeViewModel.places.value.count {
-                                                it.city.equals(city, ignoreCase = true)
-                                            }} địa điểm",
+                                            Text(city, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                                            Text("${placeViewModel.places.value.count { it.city.equals(city, ignoreCase = true) }} địa điểm",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                         Spacer(Modifier.weight(1f))
-                                        Icon(Icons.Filled.Search, null,
-                                            tint = SkyBlue40, modifier = Modifier.size(16.dp))
+                                        Icon(Icons.Filled.Search, null, tint = SkyBlue40, modifier = Modifier.size(16.dp))
                                     }
                                     if (city != citySuggestions.last()) {
-                                        HorizontalDivider(
-                                            modifier = Modifier.padding(start = 60.dp),
-                                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-                                        )
+                                        HorizontalDivider(modifier = Modifier.padding(start = 60.dp),
+                                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // ── Gợi ý tên địa điểm dropdown ──────────────────────────
+                    AnimatedVisibility(visible = placeNameSuggestions.isNotEmpty() && searchMode == "name",
+                        enter = fadeIn(), exit = fadeOut()) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                        ) {
+                            Column {
+                                placeNameSuggestions.forEach { place ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth()
+                                            .clickable { placeViewModel.selectPlaceByName(place) }
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        androidx.compose.foundation.layout.Box(
+                                            modifier = Modifier.size(40.dp).clip(RoundedCornerShape(8.dp))
+                                        ) {
+                                            coil.compose.AsyncImage(
+                                                model = place.imageUrl,
+                                                contentDescription = null,
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                            )
+                                        }
+                                        Spacer(Modifier.width(10.dp))
+                                        Column(Modifier.weight(1f)) {
+                                            Text(place.name, style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.SemiBold, maxLines = 1,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                            Text("📍 ${place.city}  •  ${place.category}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                        Text("⭐ ${place.rating}", style = MaterialTheme.typography.labelSmall,
+                                            color = SkyBlue40, fontWeight = FontWeight.Bold)
+                                    }
+                                    if (place != placeNameSuggestions.last()) {
+                                        HorizontalDivider(modifier = Modifier.padding(start = 62.dp),
+                                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                                     }
                                 }
                             }

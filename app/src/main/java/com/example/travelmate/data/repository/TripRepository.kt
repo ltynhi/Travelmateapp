@@ -184,6 +184,17 @@ class TripRepository {
         } catch (e: Exception) { 0 }
     }
 
+    /** Lấy tất cả trips — dùng cho biểu đồ thống kê admin */
+    suspend fun getAllTrips(): Result<List<Trip>> {
+        return try {
+            val snapshot = tripsCollection.get().await()
+            val trips = snapshot.documents.mapNotNull { it.toObject(Trip::class.java) }
+            Result.success(trips)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     private fun parseDateForSort(date: String): Long {
         if (date.isBlank()) return Long.MAX_VALUE
         return try {

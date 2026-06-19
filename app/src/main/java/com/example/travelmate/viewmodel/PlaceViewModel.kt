@@ -31,6 +31,18 @@ class PlaceViewModel : ViewModel() {
     private val _cityQuery = MutableStateFlow("")
     val cityQuery: StateFlow<String> = _cityQuery
 
+    /** Từ khoá tìm kiếm tên địa điểm trực tiếp */
+    private val _placeNameQuery = MutableStateFlow("")
+    val placeNameQuery: StateFlow<String> = _placeNameQuery
+
+    /** Chế độ tìm kiếm: "city" hoặc "name" */
+    private val _searchMode = MutableStateFlow("city")
+    val searchMode: StateFlow<String> = _searchMode
+
+    /** Gợi ý tên địa điểm khi tìm theo tên */
+    private val _placeNameSuggestions = MutableStateFlow<List<Place>>(emptyList())
+    val placeNameSuggestions: StateFlow<List<Place>> = _placeNameSuggestions
+
     /** Danh mục đang chọn */
     private val _selectedCategory = MutableStateFlow("")
     val selectedCategory: StateFlow<String> = _selectedCategory
@@ -135,7 +147,55 @@ class PlaceViewModel : ViewModel() {
         _selectedCategory.value = ""
         _citySuggestions.value = emptyList()
         _availableCategories.value = emptyList()
+        _placeNameQuery.value = ""
+        _placeNameSuggestions.value = emptyList()
+        _searchMode.value = "city"
         applyFilter()
+    }
+
+    /** Chuyển sang chế độ tìm theo tên địa điểm */
+    fun switchToNameSearch() {
+        _searchMode.value = "name"
+        _cityQuery.value = ""
+        _selectedCity.value = ""
+        _citySuggestions.value = emptyList()
+        _availableCategories.value = emptyList()
+        _placeNameQuery.value = ""
+        _placeNameSuggestions.value = emptyList()
+        applyFilter()
+    }
+
+    /** Chuyển sang chế độ tìm theo thành phố */
+    fun switchToCitySearch() {
+        _searchMode.value = "city"
+        _placeNameQuery.value = ""
+        _placeNameSuggestions.value = emptyList()
+        applyFilter()
+    }
+
+    /**
+     * Gọi khi user gõ vào ô tìm kiếm tên địa điểm.
+     * Cập nhật gợi ý tên realtime (tối đa 6 kết quả).
+     */
+    fun onPlaceNameQueryChanged(query: String) {
+        _placeNameQuery.value = query
+        if (query.isBlank()) {
+            _placeNameSuggestions.value = emptyList()
+            applyFilter()
+            return
+        }
+        _placeNameSuggestions.value = _places.value
+            .filter { it.name.contains(query, ignoreCase = true) }
+            .sortedByDescending { it.rating }
+            .take(6)
+        applyFilter()
+    }
+
+    /** Chọn một địa điểm từ gợi ý tên → filter chỉ hiện đúng địa điểm đó */
+    fun selectPlaceByName(place: Place) {
+        _placeNameQuery.value = place.name
+        _placeNameSuggestions.value = emptyList()
+        _filteredPlaces.value = listOf(place)
     }
 
     private fun applyFilter() {
@@ -144,8 +204,17 @@ class PlaceViewModel : ViewModel() {
         val city = _selectedCity.value
         val query = _cityQuery.value
         val category = _selectedCategory.value
+        val nameQuery = _placeNameQuery.value
+        val mode = _searchMode.value
 
         when {
+            // Mode tìm theo tên địa điểm
+            mode == "name" && nameQuery.isNotBlank() -> {
+                result = result.filter {
+                    it.name.contains(nameQuery, ignoreCase = true) ||
+                    it.description.contains(nameQuery, ignoreCase = true)
+                }.sortedByDescending { it.rating }
+            }
             // Đã chọn thành phố cụ thể → filter theo city + category
             city.isNotBlank() -> {
                 result = result.filter { it.city.equals(city, ignoreCase = true) }
