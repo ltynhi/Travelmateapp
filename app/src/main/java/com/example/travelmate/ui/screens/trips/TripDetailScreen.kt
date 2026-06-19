@@ -77,6 +77,9 @@ fun TripDetailScreen(
     var showEditPlaceDialog by remember { mutableStateOf<TripPlaceWithDetail?>(null) }
     var showDeleteConfirm by remember { mutableStateOf<TripPlaceWithDetail?>(null) }
     var showAutoScheduleConfirm by remember { mutableStateOf(false) }
+    var showAutoScheduleResult by remember { mutableStateOf(false) }
+
+    val autoScheduleResult by tripViewModel.autoScheduleResult.collectAsState()
 
     // Edit trip fields
     var editTripName by remember { mutableStateOf("") }
@@ -113,6 +116,11 @@ fun TripDetailScreen(
             snackbarHostState.showSnackbar(it)
             tripViewModel.clearMessages()
         }
+    }
+
+    // Khi có kết quả auto-schedule → hiện dialog tóm tắt
+    LaunchedEffect(autoScheduleResult) {
+        if (autoScheduleResult != null) showAutoScheduleResult = true
     }
 
     // Reset weather khi đổi trip
@@ -424,6 +432,152 @@ fun TripDetailScreen(
         )
     }
 
+    // ── Dialog kết quả auto-schedule (ý tưởng 2 + 4) ────────────────────────
+    if (showAutoScheduleResult && autoScheduleResult != null) {
+        val result = autoScheduleResult!!
+        AlertDialog(
+            onDismissRequest = {
+                showAutoScheduleResult = false
+                tripViewModel.clearAutoScheduleResult()
+            },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("🎉", fontSize = 20.sp)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Xếp lịch hoàn tất!", fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+
+                    // ── Tóm tắt lịch trình (ý tưởng 4) ─────────────────────
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF5C6BC0).copy(alpha = 0.1f)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                "📊 Tóm tắt lịch trình",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF5C6BC0)
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        "${result.scheduledCount}",
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color(0xFF5C6BC0)
+                                    )
+                                    Text("địa điểm",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        "${result.totalDays}",
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color(0xFF1976D2)
+                                    )
+                                    Text("ngày",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        "~${result.estimatedHours}h",
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color(0xFF2E7D32)
+                                    )
+                                    Text("tham quan",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            // Chi phí ước tính
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("💰", fontSize = 14.sp)
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    "Chi phí ước tính: ${formatCost(result.estimatedMinCost)} – ${formatCost(result.estimatedMaxCost)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+
+                    // ── Gợi ý thêm địa điểm (ý tưởng 2) ────────────────────
+                    if (result.suggestions.isNotEmpty()) {
+                        Text(
+                            "💡 Gợi ý thêm địa điểm",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        result.suggestions.forEach { suggestion ->
+                            Card(
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = Color(0xFF1976D2).copy(alpha = 0.06f)
+                                ),
+                                elevation = CardDefaults.cardElevation(0.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    AsyncImage(
+                                        model = suggestion.place.imageUrl,
+                                        contentDescription = null,
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .clip(RoundedCornerShape(8.dp)),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            suggestion.place.name,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            "📅 Gợi ý cho ngày ${suggestion.date.take(5)}  •  ⭐ ${suggestion.place.rating}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            suggestion.place.category,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color(0xFF1976D2)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showAutoScheduleResult = false
+                        tripViewModel.clearAutoScheduleResult()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5C6BC0))
+                ) { Text("Xem lịch trình") }
+            }
+        )
+    }
+
     // ── Dialog xác nhận auto-schedule ───────────────────────────────────────
     if (showAutoScheduleConfirm) {
         val unscheduledCount = tripPlacesWithDetail.count { it.tripPlace.visitDate.isBlank() }
@@ -476,7 +630,8 @@ fun TripDetailScreen(
                         trip?.let { t ->
                             tripViewModel.autoSchedule(
                                 tripId, t.startDate, t.endDate,
-                                rescheduleAll = isReschedule
+                                rescheduleAll = isReschedule,
+                                allAvailablePlaces = allPlaces
                             )
                         }
                         showAutoScheduleConfirm = false
@@ -1036,6 +1191,13 @@ private fun AddPlaceBottomSheet(
             }
         }
     }
+}
+
+// ── Helper format tiền ───────────────────────────────────────────────────────
+private fun formatCost(amount: Long): String = when {
+    amount >= 1_000_000 -> "${amount / 1_000_000}tr"
+    amount >= 1_000     -> "${amount / 1_000}k"
+    else                -> "${amount}đ"
 }
 
 // ── Item chọn địa điểm ───────────────────────────────────────────────────────
