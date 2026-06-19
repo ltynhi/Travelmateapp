@@ -1313,15 +1313,11 @@ private fun AddPlaceBottomSheet(
     // Tab 1 — tự nhập
     var customName by remember { mutableStateOf("") }
     var customAddress by remember { mutableStateOf("") }
-    var customCategory by remember { mutableStateOf("") }
     var customImageUrl by remember { mutableStateOf("") }
     var customDate by remember { mutableStateOf(tripStartDate) }
     var customTime by remember { mutableStateOf("") }
     var customNote by remember { mutableStateOf("") }
     var customCost by remember { mutableStateOf("") }
-    var expandedCategory by remember { mutableStateOf(false) }
-
-    val categories = listOf("Biển","Núi","Di tích","Công viên","Check-in","Quán ăn","Cafe","Khách sạn","Khác")
 
     LaunchedEffect(selectedPlace) {
         selectedPlace?.let { costInput = estimateCostFn(it).let { v -> if (v > 0) v.toString() else "" } }
@@ -1455,26 +1451,6 @@ private fun AddPlaceBottomSheet(
                         shape = RoundedCornerShape(14.dp)
                     )
 
-                    // Category picker
-                    ExposedDropdownMenuBox(expanded = expandedCategory, onExpandedChange = { expandedCategory = it }) {
-                        OutlinedTextField(
-                            value = customCategory.ifBlank { "Chọn loại địa điểm" },
-                            onValueChange = {}, readOnly = true,
-                            label = { Text("Loại địa điểm") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedCategory) },
-                            modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
-                            shape = RoundedCornerShape(14.dp)
-                        )
-                        ExposedDropdownMenu(expanded = expandedCategory, onDismissRequest = { expandedCategory = false }) {
-                            categories.forEach { cat ->
-                                DropdownMenuItem(
-                                    text = { Text(cat) },
-                                    onClick = { customCategory = cat; expandedCategory = false }
-                                )
-                            }
-                        }
-                    }
-
                     OutlinedTextField(
                         value = customImageUrl, onValueChange = { customImageUrl = it },
                         label = { Text("Link ảnh (tuỳ chọn)") },
@@ -1496,7 +1472,7 @@ private fun AddPlaceBottomSheet(
                         onClick = {
                             onAddCustom(
                                 customName.trim(), customAddress.trim(),
-                                customCategory.ifBlank { "Khác" }, customImageUrl.trim(),
+                                "Khác", customImageUrl.trim(),
                                 customDate.trim(), customTime.trim(),
                                 customNote.trim(), customCost.toLongOrNull() ?: 0L
                             )
