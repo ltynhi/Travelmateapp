@@ -14,7 +14,7 @@ class WeatherRepository {
     companion object {
         // ⚠️ Thay bằng API key của bạn từ https://openweathermap.org/api
         // Đăng ký miễn phí → My API Keys → copy key vào đây
-        const val API_KEY = "YOUR_OPENWEATHER_API_KEY"
+        const val API_KEY = "1663532be48738477b04f4b45218e8f5"
 
         // OpenWeather 5-day forecast, 3-hour intervals, trả về 40 data points
         private const val BASE_URL =
