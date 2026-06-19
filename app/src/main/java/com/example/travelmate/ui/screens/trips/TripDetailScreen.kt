@@ -467,15 +467,22 @@ fun TripDetailScreen(
             onAdd = { placeId, visitDate, visitTime, note, estimatedCost ->
                 currentUser?.let { user ->
                     tripViewModel.addPlaceToTrip(
-                        tripId = tripId,
-                        placeId = placeId,
-                        userId = user.userId,
-                        visitDate = visitDate,
-                        visitTime = visitTime,
-                        note = note,
-                        estimatedCost = estimatedCost
+                        tripId = tripId, placeId = placeId, userId = user.userId,
+                        visitDate = visitDate, visitTime = visitTime,
+                        note = note, estimatedCost = estimatedCost
                     )
                 }
+                showAddPlaceSheet = false
+            },
+            onAddCustom = { customName, customAddress, customCategory, customImageUrl,
+                            visitDate, visitTime, note, estimatedCost ->
+                tripViewModel.addCustomPlaceToTrip(
+                    tripId = tripId,
+                    customName = customName, customAddress = customAddress,
+                    customCategory = customCategory, customImageUrl = customImageUrl,
+                    visitDate = visitDate, visitTime = visitTime,
+                    note = note, estimatedCost = estimatedCost
+                )
                 showAddPlaceSheet = false
             },
             onDismiss = { showAddPlaceSheet = false }
@@ -1287,9 +1294,15 @@ private fun AddPlaceBottomSheet(
     tripStartDate: String,
     tripEndDate: String,
     onAdd: (placeId: String, visitDate: String, visitTime: String, note: String, estimatedCost: Long) -> Unit,
+    onAddCustom: (customName: String, customAddress: String, customCategory: String,
+                  customImageUrl: String, visitDate: String, visitTime: String,
+                  note: String, estimatedCost: Long) -> Unit,
     onDismiss: () -> Unit,
     estimateCostFn: (Place) -> Long = { 0L }
 ) {
+    var selectedTab by remember { mutableStateOf(0) } // 0=Chọn từ ds, 1=Tự nhập
+
+    // Tab 0 — chọn từ danh sách
     var searchQuery by remember { mutableStateOf("") }
     var selectedPlace by remember { mutableStateOf<Place?>(null) }
     var visitDate by remember { mutableStateOf(tripStartDate) }
@@ -1297,167 +1310,271 @@ private fun AddPlaceBottomSheet(
     var note by remember { mutableStateOf("") }
     var costInput by remember { mutableStateOf("") }
 
-    // Khi chọn địa điểm → tự điền chi phí ước tính
+    // Tab 1 — tự nhập
+    var customName by remember { mutableStateOf("") }
+    var customAddress by remember { mutableStateOf("") }
+    var customCategory by remember { mutableStateOf("") }
+    var customImageUrl by remember { mutableStateOf("") }
+    var customDate by remember { mutableStateOf(tripStartDate) }
+    var customTime by remember { mutableStateOf("") }
+    var customNote by remember { mutableStateOf("") }
+    var customCost by remember { mutableStateOf("") }
+    var expandedCategory by remember { mutableStateOf(false) }
+
+    val categories = listOf("Biển","Núi","Di tích","Công viên","Check-in","Quán ăn","Cafe","Khách sạn","Khác")
+
     LaunchedEffect(selectedPlace) {
-        selectedPlace?.let { place ->
-            val estimated = estimateCostFn(place)
-            costInput = if (estimated > 0) estimated.toString() else ""
-        }
+        selectedPlace?.let { costInput = estimateCostFn(it).let { v -> if (v > 0) v.toString() else "" } }
     }
 
     val filteredPlaces = allPlaces.filter {
         it.name.contains(searchQuery, ignoreCase = true) ||
-                it.address.contains(searchQuery, ignoreCase = true)
+        it.address.contains(searchQuery, ignoreCase = true)
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, dragHandle = { BottomSheetDefaults.DragHandle() }) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp)
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 32.dp)
         ) {
-            Text(
-                "Thêm địa điểm vào chuyến đi",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
+            Text("Thêm địa điểm vào chuyến đi",
+                style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(12.dp))
+
+            // ── Tab toggle ──────────────────────────────────────────────────
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf("🗺️ Chọn từ danh sách", "✏️ Tự nhập").forEachIndexed { idx, label ->
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (selectedTab == idx) SkyBlue40
+                                else MaterialTheme.colorScheme.surfaceVariant,
+                        onClick = { selectedTab = idx; selectedPlace = null }
+                    ) {
+                        Text(
+                            label,
+                            modifier = Modifier.padding(vertical = 10.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (selectedTab == idx) Color.White
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+
             Spacer(Modifier.height(16.dp))
 
-            if (selectedPlace == null) {
-                // ── Bước 1: Chọn địa điểm ────────────────────────────────────
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text("Tìm kiếm địa điểm...") },
-                    leadingIcon = { Icon(Icons.Filled.Search, null) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                Spacer(Modifier.height(8.dp))
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 320.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    filteredPlaces.forEach { place ->
-                        val alreadyAdded = existingPlaceIds.contains(place.placeId)
-                        PlacePickerItem(
-                            place = place,
-                            alreadyAdded = alreadyAdded,
-                            onClick = { if (!alreadyAdded) selectedPlace = place }
-                        )
+            if (selectedTab == 0) {
+                // ── Tab 0: Chọn từ danh sách ───────────────────────────────
+                if (selectedPlace == null) {
+                    OutlinedTextField(
+                        value = searchQuery, onValueChange = { searchQuery = it },
+                        placeholder = { Text("Tìm kiếm địa điểm...") },
+                        leadingIcon = { Icon(Icons.Filled.Search, null) },
+                        modifier = Modifier.fillMaxWidth(), singleLine = true,
+                        shape = RoundedCornerShape(14.dp)
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Column(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        filteredPlaces.forEach { place ->
+                            val alreadyAdded = existingPlaceIds.contains(place.placeId)
+                            PlacePickerItem(place, alreadyAdded) {
+                                if (!alreadyAdded) selectedPlace = place
+                            }
+                        }
+                    }
+                } else {
+                    // Preview + form ngày/giờ/chi phí
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                        shape = RoundedCornerShape(12.dp)) {
+                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            AsyncImage(model = selectedPlace!!.imageUrl.ifBlank { "https://via.placeholder.com/48" },
+                                contentDescription = null,
+                                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Crop)
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(selectedPlace!!.name, fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.titleSmall)
+                                Text(selectedPlace!!.address, style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            }
+                            TextButton(onClick = { selectedPlace = null; costInput = "" }) { Text("Đổi") }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    PlaceFormFields(
+                        visitDate = visitDate, onDateChange = { visitDate = it },
+                        visitTime = visitTime, onTimeChange = { visitTime = it },
+                        costInput = costInput, onCostChange = { costInput = it.filter { c -> c.isDigit() } },
+                        note = note, onNoteChange = { note = it },
+                        costHint = selectedPlace?.let { estimateCostFn(it) } ?: 0L
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Button(
+                        onClick = {
+                            val cost = costInput.toLongOrNull() ?: estimateCostFn(selectedPlace!!)
+                            onAdd(selectedPlace!!.placeId, visitDate.trim(), visitTime.trim(), note.trim(), cost)
+                        },
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Icon(Icons.Filled.Add, null, Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Thêm vào chuyến đi", fontWeight = FontWeight.Bold)
                     }
                 }
+
             } else {
-                // ── Bước 2: Đặt ngày/giờ/chi phí/ghi chú ────────────────────
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                    shape = RoundedCornerShape(12.dp)
+                // ── Tab 1: Tự nhập địa điểm ────────────────────────────────
+                Column(
+                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        AsyncImage(
-                            model = selectedPlace!!.imageUrl.ifBlank { "https://via.placeholder.com/48" },
-                            contentDescription = null,
-                            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Crop
+                    OutlinedTextField(
+                        value = customName, onValueChange = { customName = it },
+                        label = { Text("Tên địa điểm *") },
+                        placeholder = { Text("Vd: Quán hải sản Biển Xanh") },
+                        leadingIcon = { Icon(Icons.Filled.LocationOn, null, tint = SkyBlue40) },
+                        modifier = Modifier.fillMaxWidth(), singleLine = true,
+                        shape = RoundedCornerShape(14.dp)
+                    )
+                    OutlinedTextField(
+                        value = customAddress, onValueChange = { customAddress = it },
+                        label = { Text("Địa chỉ") },
+                        placeholder = { Text("Vd: 123 Trần Phú, Đà Nẵng") },
+                        leadingIcon = { Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                        modifier = Modifier.fillMaxWidth(), singleLine = true,
+                        shape = RoundedCornerShape(14.dp)
+                    )
+
+                    // Category picker
+                    ExposedDropdownMenuBox(expanded = expandedCategory, onExpandedChange = { expandedCategory = it }) {
+                        OutlinedTextField(
+                            value = customCategory.ifBlank { "Chọn loại địa điểm" },
+                            onValueChange = {}, readOnly = true,
+                            label = { Text("Loại địa điểm") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedCategory) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                            shape = RoundedCornerShape(14.dp)
                         )
-                        Spacer(Modifier.width(10.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(selectedPlace!!.name, fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.titleSmall)
-                            Text(selectedPlace!!.address,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        ExposedDropdownMenu(expanded = expandedCategory, onDismissRequest = { expandedCategory = false }) {
+                            categories.forEach { cat ->
+                                DropdownMenuItem(
+                                    text = { Text(cat) },
+                                    onClick = { customCategory = cat; expandedCategory = false }
+                                )
+                            }
                         }
-                        TextButton(onClick = { selectedPlace = null; costInput = "" }) { Text("Đổi") }
                     }
-                }
 
-                Spacer(Modifier.height(16.dp))
+                    OutlinedTextField(
+                        value = customImageUrl, onValueChange = { customImageUrl = it },
+                        label = { Text("Link ảnh (tuỳ chọn)") },
+                        placeholder = { Text("https://...") },
+                        modifier = Modifier.fillMaxWidth(), singleLine = true,
+                        shape = RoundedCornerShape(14.dp)
+                    )
 
-                OutlinedTextField(
-                    value = visitDate,
-                    onValueChange = { visitDate = it },
-                    label = { Text("Ngày tham quan") },
-                    placeholder = { Text("dd/MM/yyyy") },
-                    leadingIcon = { Icon(Icons.Filled.CalendarToday, null) },
-                    modifier = Modifier.fillMaxWidth(), singleLine = true,
-                    supportingText = { Text("Để trống nếu chưa xác định") }
-                )
-                Spacer(Modifier.height(8.dp))
+                    PlaceFormFields(
+                        visitDate = customDate, onDateChange = { customDate = it },
+                        visitTime = customTime, onTimeChange = { customTime = it },
+                        costInput = customCost, onCostChange = { customCost = it.filter { c -> c.isDigit() } },
+                        note = customNote, onNoteChange = { customNote = it },
+                        costHint = 0L
+                    )
 
-                OutlinedTextField(
-                    value = visitTime,
-                    onValueChange = { visitTime = it },
-                    label = { Text("Giờ tham quan") },
-                    placeholder = { Text("HH:mm  (vd: 09:00)") },
-                    leadingIcon = { Icon(Icons.Filled.Schedule, null) },
-                    modifier = Modifier.fillMaxWidth(), singleLine = true,
-                    supportingText = { Text("Để trống nếu chưa xác định") }
-                )
-                Spacer(Modifier.height(8.dp))
-
-                // ── Chi phí ước tính ─────────────────────────────────────────
-                val estimatedHint = selectedPlace?.let { estimateCostFn(it) } ?: 0L
-                OutlinedTextField(
-                    value = costInput,
-                    onValueChange = { v -> costInput = v.filter { it.isDigit() } },
-                    label = { Text("Chi phí ước tính (VNĐ)") },
-                    placeholder = { Text(if (estimatedHint > 0) "Gợi ý: ${formatCost(estimatedHint)}" else "0") },
-                    leadingIcon = { Text("💰", modifier = Modifier.padding(start = 12.dp)) },
-                    trailingIcon = {
-                        if (costInput.isNotBlank()) {
-                            val v = costInput.toLongOrNull() ?: 0L
-                            Text(
-                                formatCost(v),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFF2E7D32),
-                                modifier = Modifier.padding(end = 12.dp),
-                                fontWeight = FontWeight.Bold
+                    Spacer(Modifier.height(4.dp))
+                    Button(
+                        onClick = {
+                            onAddCustom(
+                                customName.trim(), customAddress.trim(),
+                                customCategory.ifBlank { "Khác" }, customImageUrl.trim(),
+                                customDate.trim(), customTime.trim(),
+                                customNote.trim(), customCost.toLongOrNull() ?: 0L
                             )
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(), singleLine = true,
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
-                    ),
-                    supportingText = {
-                        if (estimatedHint > 0 && costInput.isBlank())
-                            Text("App ước tính: ${formatCost(estimatedHint)} • Chỉnh lại nếu biết chính xác",
-                                color = MaterialTheme.colorScheme.primary)
+                        },
+                        enabled = customName.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
+                    ) {
+                        Text("✏️", fontSize = 16.sp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Thêm địa điểm tự nhập", fontWeight = FontWeight.Bold)
                     }
-                )
-                Spacer(Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = note,
-                    onValueChange = { note = it },
-                    label = { Text("Ghi chú") },
-                    placeholder = { Text("Vd: Đặt vé trước, mang kem chống nắng...") },
-                    leadingIcon = { Icon(Icons.Filled.Notes, null) },
-                    modifier = Modifier.fillMaxWidth(), minLines = 2
-                )
-                Spacer(Modifier.height(20.dp))
-
-                Button(
-                    onClick = {
-                        val cost = costInput.toLongOrNull()
-                            ?: estimatedHint
-                        onAdd(selectedPlace!!.placeId, visitDate.trim(),
-                            visitTime.trim(), note.trim(), cost)
-                    },
-                    modifier = Modifier.fillMaxWidth().height(52.dp)
-                ) {
-                    Icon(Icons.Filled.Add, null, Modifier.size(20.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Thêm vào chuyến đi", fontWeight = FontWeight.Bold)
                 }
             }
         }
     }
+}
+
+// ── Form fields tái sử dụng cho cả 2 tab ────────────────────────────────────
+@Composable
+private fun PlaceFormFields(
+    visitDate: String, onDateChange: (String) -> Unit,
+    visitTime: String, onTimeChange: (String) -> Unit,
+    costInput: String, onCostChange: (String) -> Unit,
+    note: String, onNoteChange: (String) -> Unit,
+    costHint: Long
+) {
+    OutlinedTextField(
+        value = visitDate, onValueChange = onDateChange,
+        label = { Text("Ngày tham quan") },
+        placeholder = { Text("dd/MM/yyyy") },
+        leadingIcon = { Icon(Icons.Filled.CalendarToday, null) },
+        modifier = Modifier.fillMaxWidth(), singleLine = true,
+        shape = RoundedCornerShape(14.dp),
+        supportingText = { Text("Để trống nếu chưa xác định") }
+    )
+    OutlinedTextField(
+        value = visitTime, onValueChange = onTimeChange,
+        label = { Text("Giờ tham quan") },
+        placeholder = { Text("HH:mm  (vd: 09:00)") },
+        leadingIcon = { Icon(Icons.Filled.Schedule, null) },
+        modifier = Modifier.fillMaxWidth(), singleLine = true,
+        shape = RoundedCornerShape(14.dp),
+        supportingText = { Text("Để trống nếu chưa xác định") }
+    )
+    OutlinedTextField(
+        value = costInput, onValueChange = onCostChange,
+        label = { Text("Chi phí ước tính (VNĐ)") },
+        placeholder = { Text(if (costHint > 0) "Gợi ý: ${formatCost(costHint)}" else "0") },
+        leadingIcon = { Text("💰", modifier = Modifier.padding(start = 12.dp)) },
+        trailingIcon = {
+            val v = costInput.toLongOrNull() ?: 0L
+            if (v > 0) Text(formatCostFull(v),
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFF2E7D32),
+                modifier = Modifier.padding(end = 12.dp),
+                fontWeight = FontWeight.Bold)
+        },
+        modifier = Modifier.fillMaxWidth(), singleLine = true,
+        shape = RoundedCornerShape(14.dp),
+        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+        ),
+        supportingText = {
+            if (costHint > 0 && costInput.isBlank())
+                Text("App ước tính: ${formatCost(costHint)} • Chỉnh lại nếu biết chính xác",
+                    color = MaterialTheme.colorScheme.primary)
+        }
+    )
+    OutlinedTextField(
+        value = note, onValueChange = onNoteChange,
+        label = { Text("Ghi chú") },
+        placeholder = { Text("Vd: Đặt vé trước, mang kem chống nắng...") },
+        leadingIcon = { Icon(Icons.Filled.Notes, null) },
+        modifier = Modifier.fillMaxWidth(), minLines = 2,
+        shape = RoundedCornerShape(14.dp)
+    )
 }
 
 // ── Helper format tiền ───────────────────────────────────────────────────────

@@ -524,7 +524,36 @@ class TripViewModel : ViewModel() {
         return fallback.getOrElse(slotIndex) { "08:00" }
     }
 
-    /** Ước tính chi phí theo category + rating — dùng để gợi ý khi thêm địa điểm */
+    fun addCustomPlaceToTrip(
+        tripId: String,
+        customName: String,
+        customAddress: String,
+        customCategory: String,
+        customImageUrl: String,
+        visitDate: String,
+        visitTime: String,
+        note: String,
+        estimatedCost: Long
+    ) {
+        viewModelScope.launch {
+            repository.addCustomPlaceToTrip(
+                tripId, customName, customAddress, customCategory,
+                customImageUrl, visitDate, visitTime, note, estimatedCost
+            ).fold(
+                onSuccess = {
+                    _successMessage.value = "Đã thêm địa điểm!"
+                    loadTripPlacesWithDetail(tripId)
+                    _trips.value = _trips.value.map { t ->
+                        if (t.tripId == tripId) t.copy(placeCount = t.placeCount + 1) else t
+                    }
+                    _selectedTrip.value = _selectedTrip.value?.let { t ->
+                        if (t.tripId == tripId) t.copy(placeCount = t.placeCount + 1) else t
+                    }
+                },
+                onFailure = { e -> _error.value = e.message }
+            )
+        }
+    }
     fun estimateCostForPlace(place: com.example.travelmate.data.model.Place): Long {
         val base = when (place.category) {
             "Núi"       -> 400_000L

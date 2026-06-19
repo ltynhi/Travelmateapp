@@ -155,14 +155,30 @@ class TripRepository {
             if (tripPlaces.isEmpty()) return Result.success(emptyList())
 
             // Fetch tất cả places song song bằng coroutineScope
+            // Custom place (placeId trống) → tạo Place giả từ thông tin tự nhập
             val result: List<TripPlaceWithDetail> = coroutineScope {
                 tripPlaces.map { tp ->
                     async {
-                        val place = placeCache[tp.placeId]
-                            ?: placesCollection.document(tp.placeId).get().await()
-                                .toObject(Place::class.java)
-                                ?.also { placeCache[tp.placeId] = it }
-                        if (place != null) TripPlaceWithDetail(tp, place) else null
+                        if (tp.isCustom) {
+                            // Địa điểm tự nhập → tạo Place object từ custom fields
+                            val customPlace = Place(
+                                placeId = tp.tripPlaceId,
+                                name = tp.customName,
+                                address = tp.customAddress,
+                                city = "",
+                                category = tp.customCategory,
+                                imageUrl = tp.customImageUrl,
+                                description = "",
+                                rating = 0.0
+                            )
+                            TripPlaceWithDetail(tp, customPlace)
+                        } else {
+                            val place = placeCache[tp.placeId]
+                                ?: placesCollection.document(tp.placeId).get().await()
+                                    .toObject(Place::class.java)
+                                    ?.also { placeCache[tp.placeId] = it }
+                            if (place != null) TripPlaceWithDetail(tp, place) else null
+                        }
                     }
                 }.awaitAll().filterNotNull()
             }
@@ -186,7 +202,45 @@ class TripRepository {
         } catch (e: Exception) { 0 }
     }
 
-    /** Lấy tất cả trips — dùng cho biểu đồ thống kê admin */
+    /** Thêm địa điểm tự nhập (không có trong database) vào trip */
+    suspend fun addCustomPlaceToTrip(
+        tripId: String,
+        customName: String,
+        customAddress: String,
+        customCategory: String,
+        customImageUrl: String,
+        visitDate: String,
+        visitTime: String,
+        note: String,
+        estimatedCost: Long
+    ): Result<Unit> {
+        return try {
+            val currentCount = tripPlacesCollection
+                .whereEqualTo("tripId", tripId).get().await().size()
+            val docRef = tripPlacesCollection.document()
+            val tripPlace = TripPlace(
+                tripPlaceId = docRef.id,
+                tripId = tripId,
+                placeId = "",           // trống vì là custom
+                customName = customName,
+                customAddress = customAddress,
+                customCategory = customCategory,
+                customImageUrl = customImageUrl,
+                visitDate = visitDate,
+                visitTime = visitTime,
+                note = note,
+                estimatedCost = estimatedCost,
+                orderIndex = currentCount
+            )
+            val batch = firestore.batch()
+            batch.set(docRef, tripPlace)
+            batch.update(tripsCollection.document(tripId), "placeCount", currentCount + 1)
+            batch.commit().await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
     suspend fun getAllTrips(): Result<List<Trip>> {
         return try {
             val snapshot = tripsCollection.get().await()
